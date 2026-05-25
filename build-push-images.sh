@@ -22,7 +22,7 @@ set -euo pipefail
 
 DOCKER_USER="${DOCKER_USER:-anhquan01}"
 VERSION="${VERSION:-1.0.0}"
-PUSH="${PUSH:-0}"
+PUSH="${PUSH:-1}"
 BUILD_CPU="${BUILD_CPU:-1}"
 BUILD_GPU="${BUILD_GPU:-1}"
 NO_CACHE="${NO_CACHE:-1}"
