@@ -20,6 +20,7 @@ from opensfm.actions import undistort
 from opensfm.dataset import DataSet
 from opensfm.types import Reconstruction
 from opensfm import report
+from opendm.report.pdf_watermark import apply_vnpt_watermark
 from opendm.multispectral import get_photos_by_band
 from opendm.gpu import has_popsift_and_can_handle_texsize, has_gpu
 from opensfm import multiview, exif
@@ -580,6 +581,7 @@ class OSFMContext:
                 if os.path.exists(report_path):
                     os.unlink(report_path)
                 shutil.move(osfm_report_path, report_path)
+                apply_vnpt_watermark(report_path)
             else:
                 log.WARNING("Report could not be generated")
         else:
