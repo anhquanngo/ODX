@@ -131,7 +131,7 @@ USER=$(id -un)
 GPU_FLAGS=""
 if [[ "$GPU" != "NO" ]]; then
     if [[ "$IMAGE_SET" = "NO" ]]; then
-        IMAGE="$IMAGE:gpu"
+        IMAGE="${IMAGE%:*}:1.0.0_gpu"
     fi
 
     GPU_FLAGS="--gpus all"

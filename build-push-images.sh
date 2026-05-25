@@ -1,41 +1,36 @@
 #!/usr/bin/env bash
 #
-# Build & push ODX Docker images (CPU + GPU).
-# Run from ODX directory or anywhere:
-#   ./build-push-images.sh
+# Build & push ODX Docker images.
+# Order: GPU first, then CPU.
+# GPU tag format: {VERSION}_gpu  (e.g. 1.0.0_gpu)
 #
 # Environment variables (optional):
-#   DOCKER_USER=anhquan01   Docker Hub username
-#   VERSION=1.0.0           Version tag
-#   PUSH=0|1                Push to Docker Hub after build (default: 0)
-#   BUILD_CPU=0|1           Build CPU image (default: 1)
-#   BUILD_GPU=0|1           Build GPU image (default: 1)
-#   NO_CACHE=0|1            docker build --no-cache (default: 1)
-#   SKIP_GPU_CHECK=0|1      Skip GPU checks (default: 0)
-#
-# Examples:
-#   ./build-push-images.sh
-#   PUSH=1 ./build-push-images.sh
-#   BUILD_CPU=0 BUILD_GPU=1 PUSH=1 ./build-push-images.sh
+#   DOCKER_USER=anhquan01
+#   VERSION=1.0.0
+#   PUSH=0|1                (default: 1)
+#   BUILD_GPU=0|1           (default: 1) — built first
+#   BUILD_CPU=0|1           (default: 1) — built after GPU
+#   NO_CACHE=0|1            (default: 1)
+#   SKIP_GPU_CHECK=0|1      (default: 0)
 #
 set -euo pipefail
 
 DOCKER_USER="${DOCKER_USER:-anhquan01}"
 VERSION="${VERSION:-1.0.0}"
 PUSH="${PUSH:-1}"
-BUILD_CPU="${BUILD_CPU:-1}"
 BUILD_GPU="${BUILD_GPU:-1}"
+BUILD_CPU="${BUILD_CPU:-1}"
 NO_CACHE="${NO_CACHE:-1}"
 SKIP_GPU_CHECK="${SKIP_GPU_CHECK:-0}"
 
 ODX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+GPU_TAG="${VERSION}_gpu"
 IMG_CPU="${DOCKER_USER}/odx:${VERSION}"
 IMG_CPU_LATEST="${DOCKER_USER}/odx:latest"
-IMG_GPU="${DOCKER_USER}/odx:${VERSION}-gpu"
-IMG_GPU_ALIAS="${DOCKER_USER}/odx:gpu"
+IMG_GPU="${DOCKER_USER}/odx:${GPU_TAG}"
 
-log() { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+log() { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >&2; }
 die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
 
 docker_build() {
@@ -76,8 +71,18 @@ check_prerequisites() {
   fi
 }
 
+build_gpu() {
+  check_gpu
+  log "========== ODX GPU (gpu.Dockerfile) → ${IMG_GPU} =========="
+  docker_build gpu.Dockerfile -t "${IMG_GPU}"
+  if [[ "${PUSH}" == "1" ]]; then
+    docker_push "${IMG_GPU}"
+  fi
+  log "Done: ${IMG_GPU}"
+}
+
 build_cpu() {
-  log "========== ODX CPU (portable.Dockerfile) =========="
+  log "========== ODX CPU (portable.Dockerfile) → ${IMG_CPU} =========="
   docker_build portable.Dockerfile -t "${IMG_CPU}" -t "${IMG_CPU_LATEST}"
   if [[ "${PUSH}" == "1" ]]; then
     docker_push "${IMG_CPU}" "${IMG_CPU_LATEST}"
@@ -85,48 +90,36 @@ build_cpu() {
   log "Done: ${IMG_CPU}, ${IMG_CPU_LATEST}"
 }
 
-build_gpu() {
-  check_gpu
-  log "========== ODX GPU (gpu.Dockerfile) =========="
-  docker_build gpu.Dockerfile -t "${IMG_GPU}" -t "${IMG_GPU_ALIAS}"
-  if [[ "${PUSH}" == "1" ]]; then
-    docker_push "${IMG_GPU}" "${IMG_GPU_ALIAS}"
-  fi
-  log "Done: ${IMG_GPU}, ${IMG_GPU_ALIAS}"
-}
-
 print_summary() {
   log "========== ODX SUMMARY =========="
   echo "Directory: ${ODX_DIR}"
   echo "User:      ${DOCKER_USER}"
   echo "Version:   ${VERSION}"
+  echo "GPU tag:   ${GPU_TAG}"
   echo "Push:      ${PUSH}"
-  if [[ "${BUILD_CPU}" == "1" ]]; then
-    echo "  CPU: ${IMG_CPU}"
-  fi
+  echo "Build order: GPU → CPU"
   if [[ "${BUILD_GPU}" == "1" ]]; then
     echo "  GPU: ${IMG_GPU}"
   fi
-  echo ""
-  echo "Next step — build NodeODX:"
-  echo "  cd ../NodeODX && ./build-push-images.sh"
-  echo ""
   if [[ "${BUILD_CPU}" == "1" ]]; then
-    echo "  docker run --rm ${IMG_CPU} --help"
+    echo "  CPU: ${IMG_CPU}, ${IMG_CPU_LATEST}"
   fi
+  echo ""
+  echo "Next: cd ../NodeODX && ./build-push-images.sh"
   if [[ "${BUILD_GPU}" == "1" ]]; then
     echo "  docker run --rm --gpus all ${IMG_GPU} --help"
   fi
 }
 
 main() {
-  log "ODX dir: ${ODX_DIR}"
+  log "ODX dir: ${ODX_DIR} | GPU tag: ${GPU_TAG}"
   check_prerequisites
-  if [[ "${BUILD_CPU}" == "1" ]]; then
-    build_cpu
-  fi
+  # GPU first (NodeODX GPU depends on this image)
   if [[ "${BUILD_GPU}" == "1" ]]; then
     build_gpu
+  fi
+  if [[ "${BUILD_CPU}" == "1" ]]; then
+    build_cpu
   fi
   print_summary
   log "ODX build finished."
