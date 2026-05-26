@@ -98,7 +98,7 @@ if [[ ! -z $IMAGE ]]; then
 fi
 export PORT="${PORT:=3000}"
 export QTC="${QTC:=NO}"
-export IMAGE="${IMAGE:=anhquan01/nodeodx:1.0.0}"
+export IMAGE="${IMAGE:=anhquan01/nodeodx:cpu}"
 export GPU="${GPU:=NO}"
 
 if [ -z "$DATA" ]; then
@@ -131,7 +131,7 @@ USER=$(id -un)
 GPU_FLAGS=""
 if [[ "$GPU" != "NO" ]]; then
     if [[ "$IMAGE_SET" = "NO" ]]; then
-        IMAGE="${IMAGE%:*}:1.0.0_gpu"
+        IMAGE="${IMAGE%:*}:gpu"
     fi
 
     GPU_FLAGS="--gpus all"
