@@ -68,7 +68,7 @@ check_prerequisites() {
 }
 
 build_gpu() {
-  # check_gpu
+  check_gpu
   log "========== ODX GPU (gpu.Dockerfile) → ${IMG_GPU} =========="
   docker_build gpu.Dockerfile -t "${IMG_GPU}"
   if [[ "${PUSH}" == "1" ]]; then
