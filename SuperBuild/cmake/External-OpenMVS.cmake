@@ -56,6 +56,10 @@ ExternalProject_Add(${_proj_name}
   GIT_TAG           355
   #--Update/Patch step----------
   UPDATE_COMMAND    ""
+  # WebODM/openMVS disables InterfaceCOLMAP; ODX colmap SfM needs it for sparse -> scene.mvs
+  PATCH_COMMAND     ${CMAKE_COMMAND}
+                      -DOPENMVS_APPS_CMAKE=<SOURCE_DIR>/apps/CMakeLists.txt
+                      -P ${CMAKE_CURRENT_LIST_DIR}/PatchOpenMVS-InterfaceCOLMAP.cmake
   #--Configure step-------------
   SOURCE_DIR        ${SB_SOURCE_DIR}/${_proj_name}
   CMAKE_ARGS
