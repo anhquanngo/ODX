@@ -97,6 +97,28 @@ class ColmapContext:
         if not io.dir_exists(self.sparse_model_dir):
             raise system.ExitException("COLMAP did not generate a sparse model (sparse/0).")
 
+    def _prepare_colmap_interface_sparse(self):
+        """
+        InterfaceCOLMAP reads {input}/sparse/cameras.bin, but COLMAP mapper writes
+        sparse/0/cameras.bin. Expose model 0 at sparse/ via symlinks.
+        """
+        model_files = [
+            "cameras.bin",
+            "images.bin",
+            "points3D.bin",
+            "cameras.txt",
+            "images.txt",
+            "points3D.txt",
+        ]
+        for name in model_files:
+            src = os.path.join(self.sparse_model_dir, name)
+            if not os.path.isfile(src):
+                continue
+            dst = os.path.join(self.sparse_dir, name)
+            if os.path.lexists(dst):
+                os.remove(dst)
+            os.symlink(os.path.relpath(src, self.sparse_dir), dst)
+
     def export_openmvs_scene(self):
         if io.dir_exists(self.openmvs_dir):
             shutil.rmtree(self.openmvs_dir)
@@ -105,12 +127,17 @@ class ColmapContext:
         if not os.path.isfile(context.omvs_interface_colmap_path):
             raise system.ExitException("Cannot find OpenMVS InterfaceCOLMAP binary.")
 
+        self._prepare_colmap_interface_sparse()
+        image_folder = os.path.relpath(self.images_dir, self.openmvs_dir)
+
         system.run(
-            '"%s" --working-folder "%s" --input-file "%s" --output-file "%s"' % (
+            '"%s" --working-folder "%s" --input-file "%s" --output-file "%s" '
+            '--image-folder "%s"' % (
                 context.omvs_interface_colmap_path,
                 self.openmvs_dir,
-                self.sparse_model_dir,
+                self.colmap_root,
                 self.openmvs_scene,
+                image_folder,
             )
         )
 
