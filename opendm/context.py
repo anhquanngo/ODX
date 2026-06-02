@@ -20,6 +20,7 @@ for p in python_packages_paths:
 
 # define opensfm path
 opensfm_path = os.path.join(superbuild_bin_path, "opensfm")
+colmap_path = os.path.join(superbuild_bin_path, "colmap")
 
 poisson_recon_path = os.path.join(superbuild_bin_path, 'PoissonRecon')
 dem2mesh_path = os.path.join(superbuild_bin_path, 'dem2mesh')
@@ -31,6 +32,7 @@ mvstex_path = os.path.join(superbuild_bin_path, "texrecon")
 # openmvs paths
 omvs_densify_path = os.path.join(superbuild_bin_path, "OpenMVS", "DensifyPointCloud")
 omvs_reconstructmesh_path = os.path.join(superbuild_bin_path, "OpenMVS", "ReconstructMesh")
+omvs_interface_colmap_path = os.path.join(superbuild_bin_path, "OpenMVS", "InterfaceCOLMAP")
 
 fpcfilter_path = os.path.join(superbuild_bin_path, "FPCFilter")
 

@@ -15,6 +15,7 @@ from opendm.osfm import OSFMContext
 from opendm import multispectral
 from opendm import thermal
 from opendm import nvm
+from opendm.colmap import ColmapContext
 from opendm.photo import find_largest_photo
 
 from opensfm.undistort import add_image_format_extension
@@ -27,6 +28,41 @@ class ODMOpenSfMStage(types.ODM_Stage):
 
         if not photos:
             raise system.ExitException('Not enough photos in photos array to start OpenSfM')
+
+        if args.sfm_engine == "colmap":
+            if reconstruction.multi_camera:
+                raise system.ExitException("COLMAP SfM engine currently supports single-camera datasets only.")
+            if 'split_is_set' in args and args.split < 999999:
+                raise system.ExitException("COLMAP SfM engine is not yet supported with split-merge.")
+
+            octx = OSFMContext(tree.opensfm)
+            octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, rerun=self.rerun())
+            octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
+            self.update_progress(20)
+
+            cctx = ColmapContext(tree.root_path, tree.opensfm)
+            cctx.setup(self.rerun())
+            cctx.run_sparse(args)
+            self.update_progress(60)
+            cctx.export_openmvs_scene()
+            self.update_progress(75)
+
+            # OpenMVS still needs a value to pick the depthmap resolution level.
+            outputs['undist_image_max_size'] = max(
+                gsd.image_max_size(
+                    photos,
+                    args.orthophoto_resolution,
+                    tree.opensfm_reconstruction,
+                    # COLMAP path currently does not generate OpenSfM reconstruction.json,
+                    # so we conservatively disable GSD-based cap here.
+                    ignore_gsd=True,
+                    has_gcp=reconstruction.has_gcp(),
+                ),
+                get_depthmap_resolution(args, photos),
+            )
+            self.update_progress(95)
+            log.WARNING("COLMAP SfM engine is experimental. Downstream georeferencing/report outputs still expect OpenSfM artifacts.")
+            return
 
         octx = OSFMContext(tree.opensfm)
         octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, rerun=self.rerun())

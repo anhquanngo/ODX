@@ -80,6 +80,7 @@ rerun_stages = {
     'rolling_shutter': 'opensfm',
     'rolling_shutter_readout': 'opensfm',
     'sfm_algorithm': 'opensfm',
+    'sfm_engine': 'opensfm',
     'sfm_no_partial': 'opensfm',
     'skip_3dmodel': 'odm_meshing',
     'skip_band_alignment': 'opensfm',
@@ -331,6 +332,16 @@ def config(argv=None, parser=None):
                     help=('Choose the structure from motion algorithm. For aerial datasets, if camera GPS positions and angles are available, triangulation can generate better results. For planar scenes captured at fixed altitude with nadir-only images, planar can be much faster. '
                         'Can be one of: %(choices)s. Default: '
                         '%(default)s'))
+
+    parser.add_argument('--sfm-engine',
+                    metavar='<string>',
+                    action=StoreValue,
+                    default='opensfm',
+                    choices=['opensfm', 'colmap'],
+                    help=('Choose the SfM backend engine. '
+                        'opensfm uses the current default OpenSfM pipeline. '
+                        'colmap uses COLMAP for sparse reconstruction with optional GPU acceleration. '
+                        'Can be one of: %(choices)s. Default: %(default)s'))
 
     parser.add_argument('--sfm-no-partial',
                 action=StoreTrue,
@@ -933,6 +944,22 @@ def config(argv=None, parser=None):
             Node.from_url(args.sm_cluster).info()
         except exceptions.NodeConnectionError as e:
             log.ERROR("Cluster node seems to be offline: %s"  % str(e))
+            sys.exit(1)
+
+    if args.sfm_engine == "colmap":
+        if args.split < 999999:
+            log.ERROR("--sfm-engine colmap is currently not supported with --split / split-merge.")
+            sys.exit(1)
+        unsupported_end_with = ['mvs_texturing', 'odm_georeferencing', 'odm_dem', 'odm_orthophoto', 'odm_report', 'odm_postprocess']
+        if args.end_with in unsupported_end_with:
+            log.ERROR("--sfm-engine colmap currently supports processing up to odm_meshing stage only. "
+                      "Please set --end-with to one of: opensfm, openmvs, odm_filterpoints, odm_meshing.")
+            sys.exit(1)
+        if args.fast_orthophoto:
+            log.ERROR("--sfm-engine colmap does not currently support --fast-orthophoto.")
+            sys.exit(1)
+        if args.radiometric_calibration != "none" or args.skip_band_alignment:
+            log.ERROR("--sfm-engine colmap does not currently support multispectral alignment/radiometric pipeline.")
             sys.exit(1)
 
     return args
