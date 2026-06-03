@@ -149,5 +149,11 @@ class ColmapContext:
         if not os.path.isfile(self.openmvs_scene):
             raise system.ExitException("Could not generate OpenMVS scene.mvs from COLMAP output.")
 
+        # DensifyPointCloud resolves image paths under openmvs/images/, not ../images/.
+        openmvs_images = os.path.join(self.openmvs_dir, "images")
+        if os.path.lexists(openmvs_images):
+            os.remove(openmvs_images)
+        os.symlink(os.path.relpath(self.images_dir, self.openmvs_dir), openmvs_images)
+
     def path(self, *paths):
         return os.path.join(self.opensfm_path, *paths)
