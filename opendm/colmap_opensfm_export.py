@@ -8,6 +8,7 @@ quaternion + translation -> OpenSfM angle-axis + translation).
 import json
 import math
 import os
+from datetime import datetime
 from struct import unpack
 
 import numpy as np
@@ -396,22 +397,92 @@ def export_colmap_stats(opensfm_path, rerun=False):
     over_two = [length for length in lengths if length >= 2]
     avg_over_two = (sum(over_two) / len(over_two)) if over_two else 0.0
 
+    has_gps = any("gps_position" in shot for shot in shots.values())
+    now_str = datetime.now().strftime("%d/%m/%Y at %H:%M:%S")
+
+    per_shot_obs = {}
+    if DataSet is not None and pymap is not None:
+        data = DataSet(opensfm_path)
+        if data.tracks_exists():
+            tm = data.load_tracks_manager()
+            for shot_id in tm.get_shot_ids():
+                per_shot_obs[shot_id] = len(tm.get_shot_observations(shot_id))
+
+    obs_counts = list(per_shot_obs.values()) if per_shot_obs else [0]
+    feat_median = int(sorted(obs_counts)[len(obs_counts) // 2]) if obs_counts else 0
+
+    cameras = recon.get("cameras", {})
+    camera_errors = {}
+    for cam_id, cam in cameras.items():
+        focal = cam.get("focal", cam.get("focal_x", 0.5))
+        camera_errors[cam_id] = {
+            "initial_values": {
+                "focal": focal,
+                "k1": 0.0,
+                "k2": 0.0,
+                "k3": 0.0,
+                "p1": 0.0,
+                "p2": 0.0,
+                "aspect_ratio": 1.0,
+                "cx": cam.get("c_x", 0.0),
+                "cy": cam.get("c_y", 0.0),
+            },
+            "optimized_values": {
+                "focal": focal,
+                "k1": cam.get("k1", 0.0),
+                "k2": cam.get("k2", 0.0),
+                "k3": cam.get("k3", 0.0),
+                "p1": cam.get("p1", 0.0),
+                "p2": cam.get("p2", 0.0),
+                "aspect_ratio": 1.0,
+                "cx": cam.get("c_x", 0.0),
+                "cy": cam.get("c_y", 0.0),
+            },
+            "bias": {
+                "rotation": [0.0, 0.0, 0.0],
+                "translation": [0.0, 0.0, 0.0],
+                "scale": 1.0,
+            },
+        }
+
+    zero_err = {
+        "mean": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "std": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "error": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "average_error": 0.0,
+        "ce90": 0.0,
+        "le90": 0.0,
+    }
+
     stats = {
         "processing_statistics": {
             "steps_times": {
                 "COLMAP SfM": 0,
                 "Total Time": 0,
             },
+            "date": now_str,
+            "start_date": now_str,
+            "end_date": now_str,
             "area": 0,
         },
         "features_statistics": {
             "note": "COLMAP SfM engine; OpenSfM feature files were not generated.",
-            "detected_features": {"min": 0, "max": 0, "mean": 0, "median": 0},
-            "reconstructed_features": {"min": 0, "max": 0, "mean": 0, "median": 0},
+            "detected_features": {
+                "min": min(obs_counts) if obs_counts else 0,
+                "max": max(obs_counts) if obs_counts else 0,
+                "mean": int(sum(obs_counts) / len(obs_counts)) if obs_counts else 0,
+                "median": feat_median,
+            },
+            "reconstructed_features": {
+                "min": min(obs_counts) if obs_counts else 0,
+                "max": max(obs_counts) if obs_counts else 0,
+                "mean": int(sum(obs_counts) / len(obs_counts)) if obs_counts else 0,
+                "median": feat_median,
+            },
         },
         "reconstruction_statistics": {
             "components": 1,
-            "has_gps": any("gps_position" in shot for shot in shots.values()),
+            "has_gps": has_gps,
             "has_gcp": False,
             "initial_points_count": len(points),
             "initial_shots_count": len(shots),
@@ -425,6 +496,11 @@ def export_colmap_stats(opensfm_path, rerun=False):
             "reprojection_error_pixels": 0,
             "reprojection_error_angular": 0,
         },
+        "camera_errors": camera_errors,
+        "rig_errors": {},
+        "gps_errors": dict(zero_err) if has_gps else {},
+        "gcp_errors": {},
+        "3d_errors": dict(zero_err),
     }
 
     os.makedirs(stats_dir, exist_ok=True)
