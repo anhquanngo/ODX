@@ -73,7 +73,8 @@ class ColmapContext:
             "--ImageReader.single_camera 1 "
             "--ImageReader.camera_model PINHOLE "
             "--SiftExtraction.use_gpu %s "
-            "--SiftExtraction.max_image_size 3200 "
+            # 2000px matches ODX OpenSfM feature_process_size; lowers SiftGPU VRAM vs 3200.
+            "--SiftExtraction.max_image_size 2000 "
             "--SiftExtraction.max_num_features %s" % (
                 self.colmap_db,
                 self.images_dir,
