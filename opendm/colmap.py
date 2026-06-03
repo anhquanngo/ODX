@@ -16,7 +16,8 @@ class ColmapContext:
         self.colmap_root = os.path.join(project_root, "colmap")
         self.colmap_db = os.path.join(self.colmap_root, "database.db")
         self.images_list = os.path.join(self.opensfm_path, "image_list.txt")
-        self.images_dir = os.path.join(self.opensfm_path, "images")
+        # OpenMVS DensifyPointCloud loads ../images relative to undistorted/openmvs.
+        self.images_dir = os.path.join(self.opensfm_path, "undistorted", "images")
         self.sparse_dir = os.path.join(self.colmap_root, "sparse")
         self.sparse_model_dir = os.path.join(self.sparse_dir, "0")
         self.openmvs_dir = os.path.join(self.opensfm_path, "undistorted", "openmvs")
@@ -130,6 +131,7 @@ class ColmapContext:
             raise system.ExitException("Cannot find OpenMVS InterfaceCOLMAP binary.")
 
         self._prepare_colmap_interface_sparse()
+        # ../images from openmvs/ -> opensfm/undistorted/images (OpenMVS layout).
         image_folder = os.path.relpath(self.images_dir, self.openmvs_dir)
 
         system.run(
