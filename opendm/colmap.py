@@ -66,9 +66,11 @@ class ColmapContext:
         if os.path.exists(self.colmap_db):
             os.remove(self.colmap_db)
 
+        # OpenMVS InterfaceCOLMAP only imports PINHOLE / SIMPLE_PINHOLE from cameras.bin.
         self._run_colmap(
             'feature_extractor --database_path "%s" --image_path "%s" '
             "--ImageReader.single_camera 1 "
+            "--ImageReader.camera_model PINHOLE "
             "--SiftExtraction.use_gpu %s "
             "--SiftExtraction.max_image_size 3200 "
             "--SiftExtraction.max_num_features %s" % (
