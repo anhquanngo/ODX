@@ -16,6 +16,7 @@ from opendm import multispectral
 from opendm import thermal
 from opendm import nvm
 from opendm.colmap import ColmapContext
+from opendm.colmap_opensfm_export import export_colmap_stats
 from opendm.photo import find_largest_photo
 
 from opensfm.undistort import add_image_format_extension
@@ -96,7 +97,7 @@ class ODMOpenSfMStage(types.ODM_Stage):
                 )
 
             if not args.skip_report:
-                octx.export_stats(self.rerun())
+                export_colmap_stats(tree.opensfm, self.rerun())
 
             self.update_progress(95)
             log.INFO(

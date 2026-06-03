@@ -316,3 +316,86 @@ def export_colmap_sparse_to_opensfm(
 
     export_colmap_tracks_manager(sparse_model_dir, opensfm_path)
     return out_path
+
+
+def export_colmap_stats(opensfm_path, rerun=False):
+    """
+    Minimal stats.json for odm_report without OpenSfM features/*.npz
+    (COLMAP does not run OpenSfM feature extraction).
+    """
+    stats_dir = os.path.join(opensfm_path, "stats")
+    stats_path = os.path.join(stats_dir, "stats.json")
+    if os.path.isfile(stats_path) and not rerun:
+        log.WARNING("Found existing %s, skipping COLMAP stats export" % stats_path)
+        return stats_path
+
+    recon_path = os.path.join(opensfm_path, "reconstruction.json")
+    if not os.path.isfile(recon_path):
+        raise IOError("Missing %s for COLMAP stats export" % recon_path)
+
+    with open(recon_path, "r") as f:
+        recon = json.load(f)[0]
+
+    shots = recon.get("shots", {})
+    points = recon.get("points", {})
+    obs_count = 0
+    track_lengths = {}
+
+    if DataSet is not None and pymap is not None:
+        data = DataSet(opensfm_path)
+        if data.tracks_exists():
+            tracks_manager = data.load_tracks_manager()
+            for shot_id in tracks_manager.get_shot_ids():
+                for track_id, _obs in tracks_manager.get_shot_observations(
+                    shot_id
+                ).items():
+                    obs_count += 1
+                    track_lengths[track_id] = track_lengths.get(track_id, 0) + 1
+
+    hist = {}
+    for track_len in track_lengths.values():
+        key = str(track_len)
+        hist[key] = hist.get(key, 0) + 1
+
+    lengths = list(track_lengths.values())
+    avg_tl = (sum(lengths) / len(lengths)) if lengths else 0.0
+    over_two = [length for length in lengths if length >= 2]
+    avg_over_two = (sum(over_two) / len(over_two)) if over_two else 0.0
+
+    stats = {
+        "processing_statistics": {
+            "steps_times": {
+                "COLMAP SfM": 0,
+                "Total Time": 0,
+            },
+            "area": 0,
+        },
+        "features_statistics": {
+            "note": "COLMAP SfM engine; OpenSfM feature files were not generated.",
+            "detected_features": {"min": 0, "max": 0, "mean": 0, "median": 0},
+            "reconstructed_features": {"min": 0, "max": 0, "mean": 0, "median": 0},
+        },
+        "reconstruction_statistics": {
+            "components": 1,
+            "has_gps": any("gps_position" in shot for shot in shots.values()),
+            "has_gcp": False,
+            "initial_points_count": len(points),
+            "initial_shots_count": len(shots),
+            "reconstructed_points_count": len(points),
+            "reconstructed_shots_count": len(shots),
+            "observations_count": obs_count,
+            "average_track_length": avg_tl,
+            "average_track_length_over_two": avg_over_two,
+            "histogram_track_length": hist,
+            "reprojection_error_normalized": 0,
+            "reprojection_error_pixels": 0,
+            "reprojection_error_angular": 0,
+        },
+    }
+
+    os.makedirs(stats_dir, exist_ok=True)
+    with open(stats_path, "w") as f:
+        json.dump(stats, f, indent=4)
+
+    log.INFO("Wrote COLMAP stats to %s" % stats_path)
+    return stats_path
