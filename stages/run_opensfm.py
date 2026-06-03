@@ -43,25 +43,66 @@ class ODMOpenSfMStage(types.ODM_Stage):
             cctx = ColmapContext(tree.root_path, tree.opensfm)
             cctx.setup(self.rerun())
             cctx.run_sparse(args)
-            self.update_progress(60)
-            cctx.export_openmvs_scene()
-            self.update_progress(75)
+            self.update_progress(45)
 
-            # OpenMVS still needs a value to pick the depthmap resolution level.
+            cctx.export_opensfm_reconstruction(self.rerun())
+            self.update_progress(55)
+
+            # OpenMVS InterfaceCOLMAP must match the images used for COLMAP SfM (pre-undistort).
+            cctx.export_openmvs_scene()
+            self.update_progress(65)
+
+            if reconstruction.is_georeferenced() and (
+                not io.file_exists(tree.opensfm_topocentric_reconstruction) or self.rerun()
+            ):
+                octx.run(
+                    'export_geocoords --reconstruction --proj "%s" --offset-x %s --offset-y %s'
+                    % (
+                        reconstruction.georef.proj4(),
+                        reconstruction.georef.utm_east_offset,
+                        reconstruction.georef.utm_north_offset,
+                    )
+                )
+                shutil.move(tree.opensfm_reconstruction, tree.opensfm_topocentric_reconstruction)
+                shutil.move(tree.opensfm_geocoords_reconstruction, tree.opensfm_reconstruction)
+
             outputs['undist_image_max_size'] = max(
                 gsd.image_max_size(
                     photos,
                     args.orthophoto_resolution,
                     tree.opensfm_reconstruction,
-                    # COLMAP path currently does not generate OpenSfM reconstruction.json,
-                    # so we conservatively disable GSD-based cap here.
-                    ignore_gsd=True,
+                    ignore_gsd=args.ignore_gsd,
                     has_gcp=reconstruction.has_gcp(),
                 ),
                 get_depthmap_resolution(args, photos),
             )
+
+            updated_config_flag_file = octx.path('updated_config.txt')
+            if not io.file_exists(updated_config_flag_file) or self.rerun():
+                octx.update_config({'undistorted_image_max_size': outputs['undist_image_max_size']})
+                octx.touch(updated_config_flag_file)
+
+            octx.convert_and_undistort(self.rerun())
+            self.update_progress(80)
+
+            octx.extract_cameras(tree.path("cameras.json"), self.rerun())
+
+            if not io.file_exists(tree.opensfm_reconstruction_nvm) or self.rerun():
+                octx.run('export_visualsfm --points')
+            else:
+                log.WARNING(
+                    'Found a valid OpenSfM NVM reconstruction file in: %s'
+                    % tree.opensfm_reconstruction_nvm
+                )
+
+            if not args.skip_report:
+                octx.export_stats(self.rerun())
+
             self.update_progress(95)
-            log.WARNING("COLMAP SfM engine is experimental. Downstream georeferencing/report outputs still expect OpenSfM artifacts.")
+            log.INFO(
+                "COLMAP sparse + OpenSfM export (reconstruction, undistort, NVM) complete. "
+                "Downstream stages still require --end-with within colmap limits in config until enabled."
+            )
             return
 
         octx = OSFMContext(tree.opensfm)
