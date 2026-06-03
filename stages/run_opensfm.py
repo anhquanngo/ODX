@@ -16,7 +16,7 @@ from opendm import multispectral
 from opendm import thermal
 from opendm import nvm
 from opendm.colmap import ColmapContext
-from opendm.colmap_opensfm_export import export_colmap_stats
+from opendm.colmap_opensfm_export import export_colmap_stats, colmap_undistort_needed
 from opendm.photo import find_largest_photo
 
 from opensfm.undistort import add_image_format_extension
@@ -83,12 +83,26 @@ class ODMOpenSfMStage(types.ODM_Stage):
                 octx.update_config({'undistorted_image_max_size': outputs['undist_image_max_size']})
                 octx.touch(updated_config_flag_file)
 
-            octx.convert_and_undistort(self.rerun())
+            need_undistort = self.rerun() or colmap_undistort_needed(tree.opensfm)
+            if need_undistort and not self.rerun():
+                log.WARNING(
+                    "Undistorted .tif images missing (COLMAP symlinks only); re-running undistort"
+                )
+                nominal_done = octx.path("undistorted", "nominal_done.txt")
+                if io.file_exists(nominal_done):
+                    os.remove(nominal_done)
+
+            octx.convert_and_undistort(need_undistort)
             self.update_progress(80)
 
             octx.extract_cameras(tree.path("cameras.json"), self.rerun())
 
-            if not io.file_exists(tree.opensfm_reconstruction_nvm) or self.rerun():
+            nvm_rerun = (
+                self.rerun()
+                or need_undistort
+                or not io.file_exists(tree.opensfm_reconstruction_nvm)
+            )
+            if nvm_rerun:
                 octx.run('export_visualsfm --points')
             else:
                 log.WARNING(

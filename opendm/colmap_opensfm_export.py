@@ -23,6 +23,11 @@ except ImportError:
 
 INVALID_POINT3D = np.iinfo(np.uint64).max
 
+try:
+    from opensfm.undistort import add_image_format_extension
+except ImportError:
+    add_image_format_extension = None
+
 # COLMAP camera model ids (subset used by ODX COLMAP feature_extractor PINHOLE).
 CAMERA_MODELS = {
     0: ("SIMPLE_PINHOLE", 3),
@@ -250,6 +255,35 @@ def export_colmap_tracks_manager(sparse_model_dir, opensfm_path):
     data.save_tracks_manager(tracks_manager)
     log.INFO("Exported COLMAP tracks to %s (%s observations)" % (data._tracks_manager_file(), n_obs))
     return tracks_manager
+
+
+def colmap_undistort_needed(opensfm_path):
+    """
+    True when undistorted .tif images are missing (e.g. only COLMAP JPG symlinks).
+    texrecon / NVM require real undistorted TIFFs.
+    """
+    if add_image_format_extension is None:
+        return True
+
+    recon_path = os.path.join(opensfm_path, "reconstruction.json")
+    if not os.path.isfile(recon_path):
+        return True
+
+    with open(recon_path, "r") as f:
+        shots = json.load(f)[0].get("shots", {})
+
+    if not shots:
+        return True
+
+    images_dir = os.path.join(opensfm_path, "undistorted", "images")
+    for shot_id in shots:
+        tif_path = os.path.join(
+            images_dir, add_image_format_extension(shot_id, "tif")
+        )
+        if not os.path.isfile(tif_path):
+            return True
+
+    return False
 
 
 def export_colmap_sparse_to_opensfm(
