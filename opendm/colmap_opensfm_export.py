@@ -14,6 +14,15 @@ import numpy as np
 
 from opendm import log
 
+try:
+    from opensfm import features
+    from opensfm import pymap
+    from opensfm.dataset import DataSet
+except ImportError:
+    features = pymap = DataSet = None
+
+INVALID_POINT3D = np.iinfo(np.uint64).max
+
 # COLMAP camera model ids (subset used by ODX COLMAP feature_extractor PINHOLE).
 CAMERA_MODELS = {
     0: ("SIMPLE_PINHOLE", 3),
@@ -164,6 +173,85 @@ def _shot_metadata_from_exif(exif_dir, filename):
     return meta
 
 
+def _read_points_colors(path):
+    colors = {}
+    if not os.path.isfile(path):
+        return colors
+    with open(path, "rb") as f:
+        n_points = unpack("<Q", f.read(8))[0]
+        for _ in range(n_points):
+            pid = unpack("<Q", f.read(8))[0]
+            f.read(24)
+            r, g, b = unpack("<BBB", f.read(3))
+            f.read(8)
+            track_len = unpack("<Q", f.read(8))[0]
+            if track_len:
+                f.seek(8 * track_len, 1)
+            colors[str(pid)] = (int(r), int(g), int(b))
+    return colors
+
+
+def export_colmap_tracks_manager(sparse_model_dir, opensfm_path):
+    """Build OpenSfM tracks.csv from COLMAP 2D–3D associations in images.bin."""
+    if pymap is None or DataSet is None or features is None:
+        raise ImportError("OpenSfM Python modules are required for COLMAP tracks export")
+
+    images_bin = os.path.join(sparse_model_dir, "images.bin")
+    cameras_bin = os.path.join(sparse_model_dir, "cameras.bin")
+    points_bin = os.path.join(sparse_model_dir, "points3D.bin")
+
+    if not os.path.isfile(images_bin):
+        raise IOError("Missing COLMAP file: %s" % images_bin)
+
+    colmap_cameras = _read_cameras_bin(cameras_bin)
+    point_colors = _read_points_colors(points_bin)
+    tracks_manager = pymap.TracksManager()
+    n_obs = 0
+
+    with open(images_bin, "rb") as f:
+        n_images = unpack("<Q", f.read(8))[0]
+        for _ in range(n_images):
+            unpack("<I", f.read(4))
+            f.read(8 * 7)
+            camera_id = unpack("<I", f.read(4))[0]
+            name = ""
+            while True:
+                ch = f.read(1)
+                if not ch or ch == b"\0":
+                    break
+                name += ch.decode("utf-8", errors="replace")
+            shot_id = os.path.basename(name)
+            cam = colmap_cameras[camera_id]
+            w, h = cam["width"], cam["height"]
+            n_points_2d = unpack("<Q", f.read(8))[0]
+            for point2d_ix in range(n_points_2d):
+                x, y = unpack("<dd", f.read(16))
+                point3d_id = unpack("<Q", f.read(8))[0]
+                if point3d_id == INVALID_POINT3D:
+                    continue
+                track_id = str(point3d_id)
+                norm = features.normalized_image_coordinates(
+                    np.array([[x, y]], dtype=float), w, h
+                )[0]
+                rgb = point_colors.get(track_id, (128, 128, 128))
+                obs = pymap.Observation(
+                    float(norm[0]),
+                    float(norm[1]),
+                    0.0,
+                    rgb[0],
+                    rgb[1],
+                    rgb[2],
+                    point2d_ix,
+                )
+                tracks_manager.add_observation(shot_id, track_id, obs)
+                n_obs += 1
+
+    data = DataSet(opensfm_path)
+    data.save_tracks_manager(tracks_manager)
+    log.INFO("Exported COLMAP tracks to %s (%s observations)" % (data._tracks_manager_file(), n_obs))
+    return tracks_manager
+
+
 def export_colmap_sparse_to_opensfm(
     sparse_model_dir,
     opensfm_path,
@@ -225,4 +313,6 @@ def export_colmap_sparse_to_opensfm(
         "Exported COLMAP sparse model to %s (%s shots, %s points)"
         % (out_path, len(shots_json), len(points_json))
     )
+
+    export_colmap_tracks_manager(sparse_model_dir, opensfm_path)
     return out_path

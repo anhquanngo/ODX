@@ -5,7 +5,10 @@ from opendm import context
 from opendm import io
 from opendm import log
 from opendm import system
-from opendm.colmap_opensfm_export import export_colmap_sparse_to_opensfm
+from opendm.colmap_opensfm_export import (
+    export_colmap_sparse_to_opensfm,
+    export_colmap_tracks_manager,
+)
 
 
 class ColmapContext:
@@ -103,16 +106,23 @@ class ColmapContext:
             raise system.ExitException("COLMAP did not generate a sparse model (sparse/0).")
 
     def export_opensfm_reconstruction(self, rerun=False):
-        """COLMAP sparse -> opensfm/reconstruction.json for downstream ODM stages."""
+        """COLMAP sparse -> opensfm/reconstruction.json + tracks.csv."""
         recon_path = os.path.join(self.opensfm_path, "reconstruction.json")
+        tracks_path = os.path.join(self.opensfm_path, "tracks.csv")
+
         if io.file_exists(recon_path) and not rerun:
             log.WARNING("Found existing %s, skipping COLMAP -> OpenSfM export" % recon_path)
+        else:
+            export_colmap_sparse_to_opensfm(
+                self.sparse_model_dir,
+                self.opensfm_path,
+            )
             return recon_path
 
-        return export_colmap_sparse_to_opensfm(
-            self.sparse_model_dir,
-            self.opensfm_path,
-        )
+        if not io.file_exists(tracks_path) or rerun:
+            export_colmap_tracks_manager(self.sparse_model_dir, self.opensfm_path)
+
+        return recon_path
 
     def _prepare_colmap_interface_sparse(self):
         """
