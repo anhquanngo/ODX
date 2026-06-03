@@ -950,11 +950,6 @@ def config(argv=None, parser=None):
         if args.split < 999999:
             log.ERROR("--sfm-engine colmap is currently not supported with --split / split-merge.")
             sys.exit(1)
-        unsupported_end_with = ['mvs_texturing', 'odm_georeferencing', 'odm_dem', 'odm_orthophoto', 'odm_report', 'odm_postprocess']
-        if args.end_with in unsupported_end_with:
-            log.ERROR("--sfm-engine colmap currently supports processing up to odm_meshing stage only. "
-                      "Please set --end-with to one of: opensfm, openmvs, odm_filterpoints, odm_meshing.")
-            sys.exit(1)
         if args.fast_orthophoto:
             log.ERROR("--sfm-engine colmap does not currently support --fast-orthophoto.")
             sys.exit(1)

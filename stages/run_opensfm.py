@@ -101,8 +101,7 @@ class ODMOpenSfMStage(types.ODM_Stage):
 
             self.update_progress(95)
             log.INFO(
-                "COLMAP sparse + OpenSfM export (reconstruction, undistort, NVM) complete. "
-                "Downstream stages still require --end-with within colmap limits in config until enabled."
+                "COLMAP sparse + OpenSfM export (reconstruction, undistort, NVM, stats) complete."
             )
             return
 
