@@ -41,7 +41,7 @@ class ODMOpenSfMStage(types.ODM_Stage):
             octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
             self.update_progress(20)
 
-            cctx = ColmapContext(tree.root_path, tree.opensfm)
+            cctx = ColmapContext(tree.root_path, tree.opensfm, tree.benchmarking)
             cctx.setup(self.rerun())
             cctx.run_sparse(args)
             self.update_progress(45)

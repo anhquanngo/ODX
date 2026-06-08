@@ -20,7 +20,7 @@ class ODMOpenMVSStage(types.ODM_Stage):
         reconstruction = outputs['reconstruction']
         photos = reconstruction.photos
         octx = OSFMContext(tree.opensfm)
-        cctx = ColmapContext(tree.root_path, tree.opensfm) if args.sfm_engine == "colmap" else None
+        cctx = ColmapContext(tree.root_path, tree.opensfm, tree.benchmarking) if args.sfm_engine == "colmap" else None
         pc_tile = False
 
         if not photos:

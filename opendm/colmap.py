@@ -12,12 +12,14 @@ from opendm.colmap_opensfm_export import (
 
 
 class ColmapContext:
-    def __init__(self, project_root, opensfm_path):
+    def __init__(self, project_root, opensfm_path, benchmarking_file=None):
         self.project_root = project_root
         self.opensfm_path = opensfm_path
+        self.benchmarking_file = benchmarking_file
         self.colmap_path = self._resolve_colmap_path()
 
         self.colmap_root = os.path.join(project_root, "colmap")
+        self.profile_log = os.path.join(self.colmap_root, "profile.log")
         self.colmap_db = os.path.join(self.colmap_root, "database.db")
         self.images_list = os.path.join(self.opensfm_path, "image_list.txt")
         # OpenMVS DensifyPointCloud loads ../images relative to undistorted/openmvs.
@@ -37,8 +39,22 @@ class ColmapContext:
 
         raise system.ExitException("Cannot find COLMAP binary. Install COLMAP or add it to ODX SuperBuild install/bin.")
 
-    def _run_colmap(self, args):
+    def _append_profile_log(self, name, delta):
+        os.makedirs(self.colmap_root, exist_ok=True)
+        with open(self.profile_log, 'a') as f:
+            f.write('%s: %s\n' % (name, delta))
+
+    def _benchmark(self, start, name):
+        if self.benchmarking_file:
+            system.benchmark(start, self.benchmarking_file, name)
+
+    def _run_colmap(self, args, profile_name=None):
+        start = system.now_raw()
         system.run('"%s" %s' % (self.colmap_path, args))
+        delta = (system.now_raw() - start).total_seconds()
+        if profile_name:
+            self._append_profile_log(profile_name, delta)
+        return delta
 
     def setup(self, rerun=False):
         if rerun and io.dir_exists(self.colmap_root):
@@ -71,6 +87,11 @@ class ColmapContext:
         if os.path.exists(self.colmap_db):
             os.remove(self.colmap_db)
 
+        if os.path.isfile(self.profile_log):
+            os.remove(self.profile_log)
+
+        sparse_start = system.now_raw()
+
         # OpenMVS InterfaceCOLMAP only imports PINHOLE / SIMPLE_PINHOLE from cameras.bin.
         self._run_colmap(
             'feature_extractor --database_path "%s" --image_path "%s" '
@@ -84,14 +105,16 @@ class ColmapContext:
                 self.images_dir,
                 use_gpu,
                 args.min_num_features,
-            )
+            ),
+            profile_name='colmap_feature_extractor',
         )
 
         self._run_colmap(
             'exhaustive_matcher --database_path "%s" --SiftMatching.use_gpu %s' % (
                 self.colmap_db,
                 use_gpu,
-            )
+            ),
+            profile_name='colmap_exhaustive_matcher',
         )
 
         self._run_colmap(
@@ -99,29 +122,43 @@ class ColmapContext:
                 self.colmap_db,
                 self.images_dir,
                 self.sparse_dir,
-            )
+            ),
+            profile_name='colmap_mapper',
         )
+
+        self._benchmark(sparse_start, 'colmap_sparse')
 
         if not io.dir_exists(self.sparse_model_dir):
             raise system.ExitException("COLMAP did not generate a sparse model (sparse/0).")
 
     def export_opensfm_reconstruction(self, rerun=False):
         """COLMAP sparse -> opensfm/reconstruction.json + tracks.csv."""
+        export_start = system.now_raw()
         recon_path = os.path.join(self.opensfm_path, "reconstruction.json")
         tracks_path = os.path.join(self.opensfm_path, "tracks.csv")
 
         if io.file_exists(recon_path) and not rerun:
             log.WARNING("Found existing %s, skipping COLMAP -> OpenSfM export" % recon_path)
         else:
+            start = system.now_raw()
             export_colmap_sparse_to_opensfm(
                 self.sparse_model_dir,
                 self.opensfm_path,
             )
-            return recon_path
+            self._append_profile_log(
+                'colmap_export_sparse_to_opensfm',
+                (system.now_raw() - start).total_seconds(),
+            )
 
         if not io.file_exists(tracks_path) or rerun:
+            start = system.now_raw()
             export_colmap_tracks_manager(self.sparse_model_dir, self.opensfm_path)
+            self._append_profile_log(
+                'colmap_export_tracks_manager',
+                (system.now_raw() - start).total_seconds(),
+            )
 
+        self._benchmark(export_start, 'colmap_export_opensfm')
         return recon_path
 
     def _prepare_colmap_interface_sparse(self):
@@ -147,6 +184,8 @@ class ColmapContext:
             os.symlink(os.path.relpath(src, self.sparse_dir), dst)
 
     def export_openmvs_scene(self):
+        export_start = system.now_raw()
+
         if io.dir_exists(self.openmvs_dir):
             shutil.rmtree(self.openmvs_dir)
         os.makedirs(self.openmvs_dir, exist_ok=True)
@@ -158,6 +197,7 @@ class ColmapContext:
         # ../images from openmvs/ -> opensfm/undistorted/images (OpenMVS layout).
         image_folder = os.path.relpath(self.images_dir, self.openmvs_dir)
 
+        start = system.now_raw()
         system.run(
             '"%s" --working-folder "%s" --input-file "%s" --output-file "%s" '
             '--image-folder "%s"' % (
@@ -168,6 +208,10 @@ class ColmapContext:
                 image_folder,
             )
         )
+        self._append_profile_log(
+            'colmap_interface_colmap',
+            (system.now_raw() - start).total_seconds(),
+        )
 
         if not os.path.isfile(self.openmvs_scene):
             raise system.ExitException("Could not generate OpenMVS scene.mvs from COLMAP output.")
@@ -177,6 +221,8 @@ class ColmapContext:
         if os.path.lexists(openmvs_images):
             os.remove(openmvs_images)
         os.symlink(os.path.relpath(self.images_dir, self.openmvs_dir), openmvs_images)
+
+        self._benchmark(export_start, 'colmap_export_openmvs')
 
     def path(self, *paths):
         return os.path.join(self.opensfm_path, *paths)
