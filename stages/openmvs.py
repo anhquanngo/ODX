@@ -9,7 +9,6 @@ from opendm import types
 from opendm.gpu import has_gpu
 from opendm.utils import get_depthmap_resolution
 from opendm.osfm import OSFMContext
-from opendm.colmap import ColmapContext
 from opendm.multispectral import get_primary_band_name
 from opendm.point_cloud import fast_merge_ply
 
@@ -20,7 +19,6 @@ class ODMOpenMVSStage(types.ODM_Stage):
         reconstruction = outputs['reconstruction']
         photos = reconstruction.photos
         octx = OSFMContext(tree.opensfm)
-        cctx = ColmapContext(tree.root_path, tree.opensfm, tree.benchmarking) if args.sfm_engine == "colmap" else None
         pc_tile = False
 
         if not photos:
@@ -35,11 +33,7 @@ class ODMOpenMVSStage(types.ODM_Stage):
             # export reconstruction from opensfm
             openmvs_scene_file = os.path.join(tree.openmvs, "scene.mvs")
             if not io.file_exists(openmvs_scene_file) or self.rerun():
-                if args.sfm_engine == "colmap":
-                    cctx.export_openmvs_scene()
-                else:
-                    cmd = 'export_openmvs'
-                    octx.run(cmd)
+                octx.run('export_openmvs')
             else:
                 log.WARNING("Found existing %s" % openmvs_scene_file)
             

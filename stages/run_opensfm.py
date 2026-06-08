@@ -16,7 +16,11 @@ from opendm import multispectral
 from opendm import thermal
 from opendm import nvm
 from opendm.colmap import ColmapContext
-from opendm.colmap_opensfm_export import export_colmap_stats, colmap_undistort_needed
+from opendm.colmap_opensfm_export import (
+    align_colmap_reconstruction,
+    export_colmap_stats,
+    colmap_undistort_needed,
+)
 from opendm.photo import find_largest_photo
 
 from opensfm.undistort import add_image_format_extension
@@ -47,11 +51,10 @@ class ODMOpenSfMStage(types.ODM_Stage):
             self.update_progress(45)
 
             cctx.export_opensfm_reconstruction(self.rerun())
-            self.update_progress(55)
+            self.update_progress(50)
 
-            # OpenMVS InterfaceCOLMAP must match the images used for COLMAP SfM (pre-undistort).
-            cctx.export_openmvs_scene()
-            self.update_progress(65)
+            align_colmap_reconstruction(tree.opensfm, self.rerun())
+            self.update_progress(58)
 
             if reconstruction.is_georeferenced() and (
                 not io.file_exists(tree.opensfm_topocentric_reconstruction) or self.rerun()
@@ -115,7 +118,7 @@ class ODMOpenSfMStage(types.ODM_Stage):
 
             self.update_progress(95)
             log.INFO(
-                "COLMAP sparse + OpenSfM export (reconstruction, undistort, NVM, stats) complete."
+                "COLMAP sparse + align + OpenSfM export (georef, undistort, NVM, stats) complete."
             )
             return
 

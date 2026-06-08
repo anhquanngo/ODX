@@ -14,13 +14,18 @@ from struct import unpack
 import numpy as np
 
 from opendm import log
+from opendm import system
 
 try:
     from opensfm import features
     from opensfm import pymap
+    from opensfm.align import align_reconstruction
     from opensfm.dataset import DataSet
+    from opensfm.reconstruction_helpers import get_image_metadata
 except ImportError:
     features = pymap = DataSet = None
+    align_reconstruction = None
+    get_image_metadata = None
 
 INVALID_POINT3D = np.iinfo(np.uint64).max
 
@@ -285,6 +290,61 @@ def colmap_undistort_needed(opensfm_path):
             return True
 
     return False
+
+
+def align_colmap_reconstruction(opensfm_path, rerun=False):
+    """
+    Apply GPS/GCP similarity alignment to a COLMAP-exported OpenSfM reconstruction.
+
+    COLMAP sparse is correct up to an arbitrary similarity transform; this step
+    brings poses and points to metric topocentric coordinates (same as OpenSfM
+    reconstruct + align_reconstruction) before export_geocoords and OpenMVS.
+    """
+    if DataSet is None or align_reconstruction is None or get_image_metadata is None:
+        raise ImportError(
+            "OpenSfM Python modules are required for COLMAP GPS alignment"
+        )
+
+    flag = os.path.join(opensfm_path, "colmap_gps_aligned.txt")
+    if rerun and os.path.isfile(flag):
+        os.remove(flag)
+
+    if os.path.isfile(flag) and not rerun:
+        log.WARNING("COLMAP GPS alignment already done, skipping")
+        return
+
+    data = DataSet(opensfm_path)
+    if not data.reconstruction_exists():
+        raise IOError("Missing reconstruction.json for COLMAP GPS alignment")
+
+    reconstructions = data.load_reconstruction()
+    if not reconstructions:
+        raise system.ExitException("Empty COLMAP reconstruction")
+
+    reconstruction = reconstructions[0]
+    reconstruction.reference = data.load_reference()
+
+    for shot_id in list(reconstruction.shots.keys()):
+        if shot_id not in data.images():
+            continue
+        reconstruction.shots[shot_id].metadata = get_image_metadata(data, shot_id)
+
+    gcp = data.load_ground_control_points()
+    result = align_reconstruction(reconstruction, gcp, data.config)
+
+    if result is None:
+        log.WARNING(
+            "COLMAP GPS/GCP alignment did not run (no constraints?). "
+            "Dense mesh and NVM may still be consistent but not metric."
+        )
+    else:
+        scale, _rotation, _translation = result
+        log.INFO("COLMAP aligned to GPS/GCP reference (scale factor: %.6f)" % scale)
+
+    data.save_reconstruction([reconstruction])
+
+    with open(flag, "w") as f:
+        f.write("done\n")
 
 
 def export_colmap_sparse_to_opensfm(

@@ -184,6 +184,12 @@ class ColmapContext:
             os.symlink(os.path.relpath(src, self.sparse_dir), dst)
 
     def export_openmvs_scene(self):
+        """
+        Build scene.mvs from raw COLMAP sparse via InterfaceCOLMAP.
+
+        Not used in the ODX pipeline: COLMAP sparse is not GPS-scaled. Use OpenSfM
+        export_openmvs after align_colmap_reconstruction + undistort instead.
+        """
         export_start = system.now_raw()
 
         if io.dir_exists(self.openmvs_dir):
