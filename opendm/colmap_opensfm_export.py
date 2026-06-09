@@ -476,6 +476,146 @@ def _colmap_features_statistics(tracks_manager, reconstructions):
     return stats
 
 
+def _safe_projection_error(tracks_manager, reconstructions):
+    """
+    Like OpenSfM stats._projection_error but skips non-finite residuals.
+
+    COLMAP-exported tracks can yield inf normalized errors when intrinsics do
+    not match OpenSfM's perspective camera model (e.g. principal point offset).
+    """
+    import math
+
+    from opensfm import pymap as osfm_pymap
+    from opensfm.stats import RESIDUAL_PIXEL_CUTOFF, _compute_errors, _norm2d
+
+    all_errors_normalized, all_errors_pixels, all_errors_angular = [], [], []
+    average_error_normalized, average_error_pixels, average_error_angular = 0, 0, 0
+    for i in range(len(reconstructions)):
+        errors_normalized = _compute_errors(reconstructions, tracks_manager)(
+            i, osfm_pymap.ErrorType.Normalized
+        )
+        errors_unnormalized = _compute_errors(reconstructions, tracks_manager)(
+            i, osfm_pymap.ErrorType.Pixel
+        )
+        errors_angular = _compute_errors(reconstructions, tracks_manager)(
+            i, osfm_pymap.ErrorType.Angular
+        )
+
+        for shot_id, shot_errors_normalized in errors_normalized.items():
+            shot = reconstructions[i].get_shot(shot_id)
+            normalizer = max(shot.camera.width, shot.camera.height)
+
+            for error_normalized, error_unnormalized, error_angular in zip(
+                shot_errors_normalized.values(),
+                errors_unnormalized[shot_id].values(),
+                errors_angular[shot_id].values(),
+            ):
+                norm_pixels = _norm2d(error_unnormalized * normalizer)
+                norm_normalized = _norm2d(error_normalized)
+                norm_angle = error_angular[0]
+                if (
+                    norm_pixels > RESIDUAL_PIXEL_CUTOFF
+                    or not math.isfinite(norm_pixels)
+                    or not math.isfinite(norm_normalized)
+                    or not math.isfinite(norm_angle)
+                ):
+                    continue
+                average_error_normalized += norm_normalized
+                average_error_pixels += norm_pixels
+                average_error_angular += norm_angle
+                all_errors_normalized.append(norm_normalized)
+                all_errors_pixels.append(norm_pixels)
+                all_errors_angular.append(norm_angle)
+
+    error_count = len(all_errors_normalized)
+    dummy = (np.array([]), np.array([]))
+    if error_count == 0:
+        return (-1.0, -1.0, -1.0, dummy, dummy, dummy)
+
+    bins = 30
+    return (
+        average_error_normalized / error_count,
+        average_error_pixels / error_count,
+        average_error_angular / error_count,
+        np.histogram(all_errors_normalized, bins),
+        np.histogram(all_errors_pixels, bins),
+        np.histogram(all_errors_angular, bins),
+    )
+
+
+def _colmap_reconstruction_statistics(data, tracks_manager, reconstructions):
+    from collections import defaultdict
+
+    from opensfm.stats import _length_histogram
+
+    stats = {}
+    stats["components"] = len(reconstructions)
+    gps_count = 0
+    for rec in reconstructions:
+        for shot in rec.shots.values():
+            gps_count += shot.metadata.gps_position.has_value
+    stats["has_gps"] = gps_count > 2
+    stats["has_gcp"] = bool(data.load_ground_control_points())
+
+    stats["initial_points_count"] = tracks_manager.num_tracks()
+    stats["initial_shots_count"] = len(data.images())
+    stats["reconstructed_points_count"] = 0
+    stats["reconstructed_shots_count"] = 0
+    stats["observations_count"] = 0
+    hist_agg = defaultdict(int)
+
+    for rec in reconstructions:
+        if len(rec.points) > 0:
+            stats["reconstructed_points_count"] += len(rec.points)
+        stats["reconstructed_shots_count"] += len(rec.shots)
+        hist, values = _length_histogram(tracks_manager, rec.points)
+        for length, count_tracks in zip(hist, values):
+            hist_agg[length] += count_tracks
+
+    hist_agg = sorted(hist_agg.items(), key=lambda x: x[0])
+    lengths = np.array([int(x[0]) for x in hist_agg])
+    counts = np.array([x[1] for x in hist_agg])
+
+    points_count = stats["reconstructed_points_count"]
+    points_count_over_two = sum(counts[1:]) if len(counts) > 1 else 0
+    stats["observations_count"] = int(sum(lengths * counts)) if len(lengths) else 0
+    stats["average_track_length"] = (
+        stats["observations_count"] / points_count if points_count > 0 else -1
+    )
+    stats["average_track_length_over_two"] = (
+        int(sum(lengths[1:] * counts[1:])) / points_count_over_two
+        if points_count_over_two > 0
+        else -1
+    )
+    stats["histogram_track_length"] = {k: v for k, v in hist_agg}
+
+    (
+        avg_normalized,
+        avg_pixels,
+        avg_angular,
+        (hist_normalized, bins_normalized),
+        (hist_pixels, bins_pixels),
+        (hist_angular, bins_angular),
+    ) = _safe_projection_error(tracks_manager, reconstructions)
+
+    stats["reprojection_error_normalized"] = avg_normalized
+    stats["reprojection_error_pixels"] = avg_pixels
+    stats["reprojection_error_angular"] = avg_angular
+    stats["reprojection_histogram_normalized"] = (
+        list(map(float, hist_normalized)),
+        list(map(float, bins_normalized)),
+    )
+    stats["reprojection_histogram_pixels"] = (
+        list(map(float, hist_pixels)),
+        list(map(float, bins_pixels)),
+    )
+    stats["reprojection_histogram_angular"] = (
+        list(map(float, hist_angular)),
+        list(map(float, bins_angular)),
+    )
+    return stats
+
+
 def _colmap_processing_statistics(data, reconstructions, opensfm_path):
     from opensfm import stats as osfm_stats
 
@@ -554,7 +694,7 @@ def export_colmap_compute_statistics(
         "features_statistics": _colmap_features_statistics(
             tracks_manager, reconstructions
         ),
-        "reconstruction_statistics": osfm_stats.reconstruction_statistics(
+        "reconstruction_statistics": _colmap_reconstruction_statistics(
             data, tracks_manager, reconstructions
         ),
         "camera_errors": osfm_stats.cameras_statistics(data, reconstructions),
@@ -566,13 +706,23 @@ def export_colmap_compute_statistics(
     output_path = stats_dir
     data.io_handler.mkdir_p(output_path)
 
-    osfm_stats.save_residual_grids(
-        data, tracks_manager, reconstructions, output_path, data.io_handler
-    )
+    try:
+        osfm_stats.save_residual_grids(
+            data, tracks_manager, reconstructions, output_path, data.io_handler
+        )
+    except Exception as e:
+        log.WARNING("COLMAP residual grids skipped: %s" % e)
+
     osfm_stats.save_matchgraph(
         data, tracks_manager, reconstructions, output_path, data.io_handler
     )
-    osfm_stats.save_residual_histogram(stats_dict, output_path, data.io_handler)
+
+    try:
+        osfm_stats.save_residual_histogram(
+            stats_dict, output_path, data.io_handler
+        )
+    except Exception as e:
+        log.WARNING("COLMAP residual histogram skipped: %s" % e)
 
     if diagram_max_points > 0:
         osfm_stats.decimate_points(reconstructions, diagram_max_points)

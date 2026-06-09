@@ -570,9 +570,10 @@ class OSFMContext:
         stats_path = self.path("stats", "stats.json")
         if rerun or not os.path.exists(stats_path) or not self.stats_diagrams_complete():
             if os.path.exists(stats_path) and not self.stats_diagrams_complete():
+                engine = "COLMAP" if colmap else "OpenSfM"
                 log.WARNING(
-                    "OpenSfM stats diagrams missing (e.g. topview.png); "
-                    "re-running compute_statistics"
+                    "%s stats diagrams missing (e.g. topview.png); "
+                    "re-running compute_statistics" % engine
                 )
             if colmap:
                 from opendm.colmap_opensfm_export import (
