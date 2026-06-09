@@ -565,7 +565,7 @@ class OSFMContext:
         required = ("stats.json", "topview.png", "matchgraph.png")
         return all(os.path.isfile(os.path.join(stats_dir, name)) for name in required)
 
-    def export_stats(self, rerun=False):
+    def export_stats(self, rerun=False, colmap=False):
         log.INFO("Export reconstruction stats")
         stats_path = self.path("stats", "stats.json")
         if rerun or not os.path.exists(stats_path) or not self.stats_diagrams_complete():
@@ -574,11 +574,21 @@ class OSFMContext:
                     "OpenSfM stats diagrams missing (e.g. topview.png); "
                     "re-running compute_statistics"
                 )
-            self.run("compute_statistics --diagram_max_points 100000")
+            if colmap:
+                from opendm.colmap_opensfm_export import (
+                    export_colmap_compute_statistics,
+                )
+
+                export_colmap_compute_statistics(
+                    self.opensfm_project_path,
+                    rerun=rerun or not self.stats_diagrams_complete(),
+                )
+            else:
+                self.run("compute_statistics --diagram_max_points 100000")
         else:
             log.WARNING("Found existing reconstruction stats %s" % stats_path)
 
-    def export_report(self, report_path, odm_stats, rerun=False):
+    def export_report(self, report_path, odm_stats, rerun=False, colmap=False):
         log.INFO("Exporting report to %s" % report_path)
 
         osfm_report_path = self.path("stats", "report.pdf")
@@ -588,7 +598,7 @@ class OSFMContext:
                 log.WARNING(
                     "Report diagrams missing before PDF export; running compute_statistics"
                 )
-                self.export_stats(True)
+                self.export_stats(True, colmap=colmap)
 
             if odm_stats is not None and os.path.isdir(os.path.dirname(stats_path)):
                 with open(stats_path, 'w') as f:

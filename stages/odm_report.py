@@ -97,9 +97,10 @@ class ODMReport(types.ODM_Stage):
         point_cloud_file = None
         views_dimension = None
 
+        colmap_sfm = getattr(args, "sfm_engine", "opensfm") == "colmap"
         if not octx.stats_diagrams_complete():
             log.WARNING("OpenSfM report diagrams missing; running compute_statistics")
-            octx.export_stats(True)
+            octx.export_stats(True, colmap=colmap_sfm)
 
         if not os.path.exists(odm_stats_json) or self.rerun():
             if os.path.exists(osfm_stats_json):
@@ -235,5 +236,8 @@ class ODMReport(types.ODM_Stage):
 
         if odm_stats is not None:
             octx.export_report(
-                os.path.join(tree.odm_report, "report.pdf"), odm_stats, self.rerun()
+                os.path.join(tree.odm_report, "report.pdf"),
+                odm_stats,
+                self.rerun(),
+                colmap=colmap_sfm,
             )

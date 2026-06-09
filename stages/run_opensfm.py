@@ -56,7 +56,7 @@ class ODMOpenSfMStage(types.ODM_Stage):
             self.update_progress(58)
 
             if not args.skip_report:
-                octx.export_stats(self.rerun())
+                octx.export_stats(self.rerun(), colmap=True)
 
             if reconstruction.is_georeferenced() and (
                 not io.file_exists(tree.opensfm_topocentric_reconstruction) or self.rerun()

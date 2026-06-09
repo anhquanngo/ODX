@@ -423,9 +423,177 @@ def export_colmap_sparse_to_opensfm(
     return out_path
 
 
+def _attach_reconstruction_metadata(data, reconstructions):
+    reference = data.load_reference()
+    for reconstruction in reconstructions:
+        reconstruction.reference = reference
+        for shot_id in list(reconstruction.shots.keys()):
+            if shot_id in data.images():
+                reconstruction.shots[shot_id].metadata = get_image_metadata(
+                    data, shot_id
+                )
+
+
+def _colmap_features_statistics(tracks_manager, reconstructions):
+    from collections import defaultdict
+
+    per_shot_all = {}
+    for shot_id in tracks_manager.get_shot_ids():
+        per_shot_all[shot_id] = len(tracks_manager.get_shot_observations(shot_id))
+    all_counts = list(per_shot_all.values())
+
+    stats = {
+        "note": "COLMAP SfM engine; OpenSfM feature files were not generated.",
+    }
+    if all_counts:
+        stats["detected_features"] = {
+            "min": min(all_counts),
+            "max": max(all_counts),
+            "mean": int(np.mean(all_counts)),
+            "median": int(np.median(all_counts)),
+        }
+    else:
+        stats["detected_features"] = {"min": -1, "max": -1, "mean": -1, "median": -1}
+
+    per_shots = defaultdict(int)
+    for rec in reconstructions:
+        all_points_keys = set(rec.points.keys())
+        for shot_id in rec.shots:
+            if shot_id not in tracks_manager.get_shot_ids():
+                continue
+            for point_id in tracks_manager.get_shot_observations(shot_id):
+                if point_id not in all_points_keys:
+                    continue
+                per_shots[shot_id] += 1
+    per_shots = list(per_shots.values())
+
+    stats["reconstructed_features"] = {
+        "min": int(min(per_shots)) if per_shots else -1,
+        "max": int(max(per_shots)) if per_shots else -1,
+        "mean": int(np.mean(per_shots)) if per_shots else -1,
+        "median": int(np.median(per_shots)) if per_shots else -1,
+    }
+    return stats
+
+
+def _colmap_processing_statistics(data, reconstructions, opensfm_path):
+    from opensfm import stats as osfm_stats
+
+    stats = osfm_stats.processing_statistics(data, reconstructions)
+    profile = os.path.join(os.path.dirname(opensfm_path), "colmap", "profile.log")
+    if not os.path.isfile(profile):
+        return stats
+
+    colmap_times = {}
+    total = 0.0
+    with open(profile, "r") as f:
+        for line in f:
+            if ":" not in line:
+                continue
+            name, val = line.strip().split(":", 1)
+            try:
+                t = float(val.strip())
+            except ValueError:
+                continue
+            colmap_times[name.strip()] = t
+            total += t
+
+    if colmap_times:
+        stats["steps_times"] = colmap_times
+        stats["steps_times"]["Total Time"] = total
+    return stats
+
+
+def export_colmap_compute_statistics(
+    opensfm_path, diagram_max_points=100000, rerun=False
+):
+    """
+    OpenSfM compute_statistics for COLMAP exports: stats.json + report diagrams
+    without reading opensfm/features/*.npz (COLMAP does not run OpenSfM feature
+    extraction).
+    """
+    if DataSet is None or get_image_metadata is None:
+        raise ImportError(
+            "OpenSfM Python modules are required for COLMAP statistics export"
+        )
+
+    try:
+        from opensfm import io as osfm_io
+        from opensfm import stats as osfm_stats
+    except ImportError as e:
+        raise ImportError(
+            "OpenSfM stats modules are required for COLMAP statistics export"
+        ) from e
+
+    stats_dir = os.path.join(opensfm_path, "stats")
+    stats_path = os.path.join(stats_dir, "stats.json")
+    required_diagrams = ("topview.png", "matchgraph.png")
+    diagrams_ok = all(
+        os.path.isfile(os.path.join(stats_dir, name)) for name in required_diagrams
+    )
+
+    if os.path.isfile(stats_path) and diagrams_ok and not rerun:
+        log.WARNING("Found existing COLMAP stats %s, skipping" % stats_path)
+        return stats_path
+
+    if os.path.isfile(stats_path) and not diagrams_ok:
+        log.WARNING(
+            "COLMAP stats diagrams missing (e.g. topview.png); "
+            "re-running compute_statistics"
+        )
+
+    data = DataSet(opensfm_path)
+    reconstructions = data.load_reconstruction()
+    tracks_manager = data.load_tracks_manager()
+    _attach_reconstruction_metadata(data, reconstructions)
+
+    stats_dict = {
+        "processing_statistics": _colmap_processing_statistics(
+            data, reconstructions, opensfm_path
+        ),
+        "features_statistics": _colmap_features_statistics(
+            tracks_manager, reconstructions
+        ),
+        "reconstruction_statistics": osfm_stats.reconstruction_statistics(
+            data, tracks_manager, reconstructions
+        ),
+        "camera_errors": osfm_stats.cameras_statistics(data, reconstructions),
+        "rig_errors": osfm_stats.rig_statistics(data, reconstructions),
+        "gps_errors": osfm_stats.gps_errors(reconstructions),
+        "gcp_errors": osfm_stats.gcp_errors(data, reconstructions),
+    }
+
+    output_path = stats_dir
+    data.io_handler.mkdir_p(output_path)
+
+    osfm_stats.save_residual_grids(
+        data, tracks_manager, reconstructions, output_path, data.io_handler
+    )
+    osfm_stats.save_matchgraph(
+        data, tracks_manager, reconstructions, output_path, data.io_handler
+    )
+    osfm_stats.save_residual_histogram(stats_dict, output_path, data.io_handler)
+
+    if diagram_max_points > 0:
+        osfm_stats.decimate_points(reconstructions, diagram_max_points)
+
+    osfm_stats.save_heatmap(
+        data, tracks_manager, reconstructions, output_path, data.io_handler
+    )
+    osfm_stats.save_topview(
+        data, tracks_manager, reconstructions, output_path, data.io_handler
+    )
+
+    with data.io_handler.open_wt(os.path.join(output_path, "stats.json")) as fout:
+        osfm_io.json_dump(stats_dict, fout)
+
+    log.INFO("Wrote COLMAP compute_statistics to %s" % stats_path)
+    return stats_path
+
+
 def export_colmap_stats(opensfm_path, rerun=False):
     """
-    Deprecated: use OpenSfM compute_statistics (octx.export_stats) instead.
+    Deprecated: use export_colmap_compute_statistics (octx.export_stats colmap=True).
 
     Minimal stats.json for odm_report without OpenSfM features/*.npz
     (COLMAP does not run OpenSfM feature extraction).
