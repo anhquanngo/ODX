@@ -559,10 +559,21 @@ class OSFMContext:
         else:
             log.WARNING("Tried to update configuration, but %s does not exist." % cfg_file)
 
+    def stats_diagrams_complete(self):
+        """True when compute_statistics outputs required for report.pdf exist."""
+        stats_dir = self.path("stats")
+        required = ("stats.json", "topview.png", "matchgraph.png")
+        return all(os.path.isfile(os.path.join(stats_dir, name)) for name in required)
+
     def export_stats(self, rerun=False):
         log.INFO("Export reconstruction stats")
         stats_path = self.path("stats", "stats.json")
-        if not os.path.exists(stats_path) or rerun:
+        if rerun or not os.path.exists(stats_path) or not self.stats_diagrams_complete():
+            if os.path.exists(stats_path) and not self.stats_diagrams_complete():
+                log.WARNING(
+                    "OpenSfM stats diagrams missing (e.g. topview.png); "
+                    "re-running compute_statistics"
+                )
             self.run("compute_statistics --diagram_max_points 100000")
         else:
             log.WARNING("Found existing reconstruction stats %s" % stats_path)
@@ -573,6 +584,12 @@ class OSFMContext:
         osfm_report_path = self.path("stats", "report.pdf")
         stats_path = self.path("stats", "stats.json")
         if not os.path.exists(report_path) or rerun:
+            if not self.stats_diagrams_complete():
+                log.WARNING(
+                    "Report diagrams missing before PDF export; running compute_statistics"
+                )
+                self.export_stats(True)
+
             if odm_stats is not None and os.path.isdir(os.path.dirname(stats_path)):
                 with open(stats_path, 'w') as f:
                     f.write(json.dumps(odm_stats, indent=4))
