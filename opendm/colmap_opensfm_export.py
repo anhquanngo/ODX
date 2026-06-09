@@ -616,6 +616,40 @@ def _colmap_reconstruction_statistics(data, tracks_manager, reconstructions):
     return stats
 
 
+def _colmap_cameras_statistics(data, reconstructions):
+    """
+    Camera stats for COLMAP export where reconstruction uses colmap_pinhole
+    but dataset camera_models.json only has EXIF-derived camera ids.
+    """
+    from opensfm import io as osfm_io
+    from opensfm.stats import _cameras_statistics
+
+    stats = {}
+    dataset_cameras = data.load_camera_models()
+    zero_bias = {
+        "rotation": [0.0, 0.0, 0.0],
+        "translation": [0.0, 0.0, 0.0],
+        "scale": 1.0,
+    }
+
+    for rec in reconstructions:
+        for camera in rec.cameras.values():
+            if camera.id in stats:
+                continue
+            initial_camera = dataset_cameras.get(camera.id, camera)
+            entry = {
+                "initial_values": _cameras_statistics(initial_camera),
+                "optimized_values": _cameras_statistics(camera),
+            }
+            if camera.id in rec.biases:
+                entry["bias"] = osfm_io.bias_to_json(rec.biases[camera.id])
+            else:
+                entry["bias"] = dict(zero_bias)
+            stats[camera.id] = entry
+
+    return stats
+
+
 def _colmap_processing_statistics(data, reconstructions, opensfm_path):
     from opensfm import stats as osfm_stats
 
@@ -676,12 +710,6 @@ def export_colmap_compute_statistics(
         log.WARNING("Found existing COLMAP stats %s, skipping" % stats_path)
         return stats_path
 
-    if os.path.isfile(stats_path) and not diagrams_ok:
-        log.WARNING(
-            "COLMAP stats diagrams missing (e.g. topview.png); "
-            "re-running compute_statistics"
-        )
-
     data = DataSet(opensfm_path)
     reconstructions = data.load_reconstruction()
     tracks_manager = data.load_tracks_manager()
@@ -697,7 +725,7 @@ def export_colmap_compute_statistics(
         "reconstruction_statistics": _colmap_reconstruction_statistics(
             data, tracks_manager, reconstructions
         ),
-        "camera_errors": osfm_stats.cameras_statistics(data, reconstructions),
+        "camera_errors": _colmap_cameras_statistics(data, reconstructions),
         "rig_errors": osfm_stats.rig_statistics(data, reconstructions),
         "gps_errors": osfm_stats.gps_errors(reconstructions),
         "gcp_errors": osfm_stats.gcp_errors(data, reconstructions),
