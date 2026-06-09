@@ -19,11 +19,13 @@ from opendm import system
 try:
     from opensfm import features
     from opensfm import pymap
+    from opensfm import pygeometry
     from opensfm.align import align_reconstruction
     from opensfm.dataset import DataSet
     from opensfm.reconstruction_helpers import get_image_metadata
 except ImportError:
     features = pymap = DataSet = None
+    pygeometry = None
     align_reconstruction = None
     get_image_metadata = None
 
@@ -341,6 +343,14 @@ def align_colmap_reconstruction(opensfm_path, rerun=False):
         scale, _rotation, _translation = result
         log.INFO("COLMAP aligned to GPS/GCP reference (scale factor: %.6f)" % scale)
 
+    if pygeometry is not None:
+        for camera_id in reconstruction.cameras:
+            if camera_id not in reconstruction.biases:
+                reconstruction.set_bias(
+                    camera_id,
+                    pygeometry.Similarity([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 1.0),
+                )
+
     data.save_reconstruction([reconstruction])
 
     with open(flag, "w") as f:
@@ -415,6 +425,8 @@ def export_colmap_sparse_to_opensfm(
 
 def export_colmap_stats(opensfm_path, rerun=False):
     """
+    Deprecated: use OpenSfM compute_statistics (octx.export_stats) instead.
+
     Minimal stats.json for odm_report without OpenSfM features/*.npz
     (COLMAP does not run OpenSfM feature extraction).
     """

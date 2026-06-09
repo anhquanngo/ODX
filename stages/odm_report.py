@@ -221,13 +221,6 @@ class ODMReport(types.ODM_Stage):
             log.WARNING("Cannot generate overlap diagram, point cloud stats missing")
 
         if odm_stats is not None:
-            if args.sfm_engine == "colmap":
-                log.WARNING(
-                    "COLMAP engine: skipping OpenSfM PDF report.pdf "
-                    "(requires OpenSfM compute_statistics diagrams). "
-                    "See odm_report/stats.json, shots.geojson, and opensfm/stats/*.png."
-                )
-            else:
-                octx.export_report(
-                    os.path.join(tree.odm_report, "report.pdf"), odm_stats, self.rerun()
-                )
+            octx.export_report(
+                os.path.join(tree.odm_report, "report.pdf"), odm_stats, self.rerun()
+            )

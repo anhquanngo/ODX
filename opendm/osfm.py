@@ -571,9 +571,14 @@ class OSFMContext:
         log.INFO("Exporting report to %s" % report_path)
 
         osfm_report_path = self.path("stats", "report.pdf")
+        stats_path = self.path("stats", "stats.json")
         if not os.path.exists(report_path) or rerun:
+            if odm_stats is not None and os.path.isdir(os.path.dirname(stats_path)):
+                with open(stats_path, 'w') as f:
+                    f.write(json.dumps(odm_stats, indent=4))
+
             data = DataSet(self.opensfm_project_path)
-            pdf_report = report.Report(data, odm_stats)
+            pdf_report = report.Report(data)
             pdf_report.generate_report()
             pdf_report.save_report("report.pdf")
             

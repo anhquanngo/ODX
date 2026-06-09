@@ -18,7 +18,6 @@ from opendm import nvm
 from opendm.colmap import ColmapContext
 from opendm.colmap_opensfm_export import (
     align_colmap_reconstruction,
-    export_colmap_stats,
     colmap_undistort_needed,
 )
 from opendm.photo import find_largest_photo
@@ -55,6 +54,9 @@ class ODMOpenSfMStage(types.ODM_Stage):
 
             align_colmap_reconstruction(tree.opensfm, self.rerun())
             self.update_progress(58)
+
+            if not args.skip_report:
+                octx.export_stats(self.rerun())
 
             if reconstruction.is_georeferenced() and (
                 not io.file_exists(tree.opensfm_topocentric_reconstruction) or self.rerun()
@@ -112,9 +114,6 @@ class ODMOpenSfMStage(types.ODM_Stage):
                     'Found a valid OpenSfM NVM reconstruction file in: %s'
                     % tree.opensfm_reconstruction_nvm
                 )
-
-            if not args.skip_report:
-                export_colmap_stats(tree.opensfm, self.rerun())
 
             self.update_progress(95)
             log.INFO(
