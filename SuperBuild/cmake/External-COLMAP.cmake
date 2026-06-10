@@ -10,14 +10,15 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Headless ODX pipeline: feature_extractor, exhaustive_matcher, mapper only.
+# Use COLMAP 3.9.1 (no PoseLib FetchContent — avoids network/hash failures in Docker).
 set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
 if(NOT WIN32 AND NOT APPLE)
     if(EXISTS "/usr/local/cuda/bin/nvcc")
-        # Semicolons in arch list must be quoted — CMake treats ";" as a list separator.
         set(COLMAP_CUDA_ARGS
             -DCUDA_ENABLED=ON
             "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
-            "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89;90"
+            # RTX 2080 Ti (sm_75); single arch avoids CMake list ";" pitfalls.
+            "-DCMAKE_CUDA_ARCHITECTURES=75"
         )
     endif()
 endif()
@@ -30,26 +31,24 @@ ExternalProject_Add(${_proj_name}
   #--Download step--------------
   DOWNLOAD_DIR      ${SB_DOWNLOAD_DIR}
   GIT_REPOSITORY    https://github.com/colmap/colmap.git
-  GIT_TAG           3.11.1
+  GIT_TAG           3.9.1
   #--Update/Patch step----------
   UPDATE_COMMAND    ""
   #--Configure step-------------
   SOURCE_DIR        ${SB_SOURCE_DIR}/${_proj_name}
+  CMAKE_GENERATOR   Ninja
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_INSTALL_PREFIX=${SB_INSTALL_DIR}
-    -DCMAKE_PREFIX_PATH=${SB_INSTALL_DIR}
     -DCeres_DIR=${SB_INSTALL_DIR}/lib/cmake/Ceres
     -DOpenCV_DIR=${SB_INSTALL_DIR}/lib/cmake/opencv4
     -Dgflags_DIR=${SB_INSTALL_DIR}/lib/cmake/gflags
     -DGUI_ENABLED=OFF
     -DOPENGL_ENABLED=OFF
     -DCGAL_ENABLED=OFF
-    -DLSD_ENABLED=OFF
     -DTESTS_ENABLED=OFF
-    -DUNINSTALL_ENABLED=OFF
     -DCCACHE_ENABLED=OFF
-    -DFETCH_POSELIB=ON
+    -DIPO_ENABLED=OFF
     ${COLMAP_CUDA_ARGS}
     ${GPU_CMAKE_ARGS}
     ${WIN32_CMAKE_ARGS}

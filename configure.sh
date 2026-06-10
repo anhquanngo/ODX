@@ -227,7 +227,16 @@ install() {
     echo "Compiling SuperBuild"
     cd ${RUNPATH}/SuperBuild
     mkdir -p build && cd build
-    cmake .. && make -j$(nproc)
+    cmake .. && make -j$(nproc) || {
+        echo "SuperBuild failed. COLMAP configure/build logs (if any):"
+        for log in colmap/stamp/colmap-configure*.log colmap/stamp/colmap-build*.log; do
+            if [ -f "$log" ]; then
+                echo "========== $log =========="
+                tail -n 80 "$log"
+            fi
+        done
+        exit 1
+    }
 
     echo "Configuration Finished"
 }
