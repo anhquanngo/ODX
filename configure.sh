@@ -106,11 +106,14 @@ installruntimedeps() {
             libgoogle-glog0v6t64 \
             libsuitesparseconfig7 \
             libboost-program-options1.83.0 \
+            libboost-filesystem1.83.0 \
             libboost-graph1.83.0 \
+            libboost-regex1.83.0 \
             libboost-iostreams1.83.0 \
             libboost-serialization1.83.0 \
             libboost-system1.83.0 \
             libfreeimage3 \
+            liblz4-1 \
             libmetis5 \
             libsqlite3-0 \
             libgoogle-perftools4t64
@@ -163,11 +166,14 @@ installbuilddeps(){
             libsuitesparse-dev \
             libcgal-dev \
             libboost-program-options-dev \
+            libboost-filesystem-dev \
             libboost-graph-dev \
+            libboost-regex-dev \
             libboost-iostreams-dev \
             libboost-serialization-dev \
             libboost-system-dev \
             libfreeimage-dev \
+            liblz4-dev \
             libmetis-dev \
             libsqlite3-dev \
             libgoogle-perftools-dev

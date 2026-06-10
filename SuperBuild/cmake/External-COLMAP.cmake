@@ -13,10 +13,11 @@ endif()
 set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
 if(NOT WIN32 AND NOT APPLE)
     if(EXISTS "/usr/local/cuda/bin/nvcc")
+        # Semicolons in arch list must be quoted — CMake treats ";" as a list separator.
         set(COLMAP_CUDA_ARGS
             -DCUDA_ENABLED=ON
-            # RTX 20xx/30xx/40xx/50xx coverage for portable GPU images.
-            -DCMAKE_CUDA_ARCHITECTURES=75;80;86;89;90
+            "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
+            "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89;90"
         )
     endif()
 endif()
@@ -47,6 +48,7 @@ ExternalProject_Add(${_proj_name}
     -DLSD_ENABLED=OFF
     -DTESTS_ENABLED=OFF
     -DUNINSTALL_ENABLED=OFF
+    -DCCACHE_ENABLED=OFF
     -DFETCH_POSELIB=ON
     ${COLMAP_CUDA_ARGS}
     ${GPU_CMAKE_ARGS}
@@ -57,7 +59,7 @@ ExternalProject_Add(${_proj_name}
   #--Install step---------------
   INSTALL_DIR       ${SB_INSTALL_DIR}
   #--Output logging-------------
-  LOG_DOWNLOAD      OFF
-  LOG_CONFIGURE     OFF
-  LOG_BUILD         OFF
+  LOG_DOWNLOAD      ON
+  LOG_CONFIGURE     ON
+  LOG_BUILD         ON
 )
