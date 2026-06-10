@@ -106,9 +106,13 @@ installruntimedeps() {
             libgoogle-glog0v6t64 \
             libsuitesparseconfig7 \
             libboost-program-options1.83.0 \
+            libboost-graph1.83.0 \
             libboost-iostreams1.83.0 \
             libboost-serialization1.83.0 \
             libboost-system1.83.0 \
+            libfreeimage3 \
+            libmetis5 \
+            libsqlite3-0 \
             libgoogle-perftools4t64
         break
         echo "Attempt $i failed, sleeping..."
@@ -159,9 +163,13 @@ installbuilddeps(){
             libsuitesparse-dev \
             libcgal-dev \
             libboost-program-options-dev \
+            libboost-graph-dev \
             libboost-iostreams-dev \
             libboost-serialization-dev \
             libboost-system-dev \
+            libfreeimage-dev \
+            libmetis-dev \
+            libsqlite3-dev \
             libgoogle-perftools-dev
         break
         echo "Attempt $i failed, sleeping..."

@@ -157,6 +157,11 @@ set(custom_libs OpenSfM
 				RenderDEM
 )
 
+# COLMAP SfM engine (--sfm-engine colmap); skip on Windows (not used in ODX Windows builds).
+if(NOT WIN32)
+	list(APPEND custom_libs COLMAP)
+endif()
+
 externalproject_add(mve
     GIT_REPOSITORY  https://github.com/WebODM/mve.git
     GIT_TAG         066ff646837ef3f95905af45406391f76d4b266d
