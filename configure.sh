@@ -113,6 +113,8 @@ installruntimedeps() {
             libboost-serialization1.83.0 \
             libboost-system1.83.0 \
             libfreeimage3 \
+            libgl1 \
+            libglew2.2 \
             liblz4-1 \
             libmetis5 \
             libsqlite3-0 \
@@ -173,6 +175,8 @@ installbuilddeps(){
             libboost-serialization-dev \
             libboost-system-dev \
             libfreeimage-dev \
+            libgl1-mesa-dev \
+            libglew-dev \
             liblz4-dev \
             libmetis-dev \
             libsqlite3-dev \
