@@ -34,6 +34,9 @@ ExternalProject_Add(${_proj_name}
   GIT_TAG           3.9.1
   #--Update/Patch step----------
   UPDATE_COMMAND    ""
+  PATCH_COMMAND     ${CMAKE_COMMAND}
+                      -DCOLMAP_LINE_CC=<SOURCE_DIR>/src/colmap/image/line.cc
+                      -P ${CMAKE_CURRENT_LIST_DIR}/PatchCOLMAP-line-memory.cmake
   #--Configure step-------------
   SOURCE_DIR        ${SB_SOURCE_DIR}/${_proj_name}
   CMAKE_GENERATOR   Ninja
