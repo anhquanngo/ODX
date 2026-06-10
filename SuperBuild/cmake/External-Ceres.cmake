@@ -19,8 +19,8 @@ ExternalProject_Add(${_proj_name}
     -DBUILD_EXAMPLES=OFF
     -DBUILD_TESTING=OFF
     -DUSE_CUDA=OFF
-    # Use system glog (libgoogle-glog-dev); miniglog breaks COLMAP (FLAGS_logtostderr).
-    -DMINIGLOG=OFF
+    -DMINIGLOG=ON
+    -DMINIGLOG_MAX_LOG_LEVEL=-100
     -DCMAKE_INSTALL_PREFIX:PATH=${SB_INSTALL_DIR}
     ${WIN32_CMAKE_ARGS}
   #--Build step-----------------

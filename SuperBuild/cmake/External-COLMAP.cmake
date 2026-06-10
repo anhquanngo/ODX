@@ -39,8 +39,8 @@ ExternalProject_Add(${_proj_name}
   CMAKE_GENERATOR   Ninja
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    # GCC 13+ (Ubuntu 24.04): COLMAP 3.9.1 uses std::unique_ptr without <memory> in several TUs.
-    "-DCMAKE_CXX_FLAGS=-include memory"
+    # GCC 13+ / Ceres miniglog: force <memory> and system glog before Ceres headers in COLMAP only.
+    "-DCMAKE_CXX_FLAGS=-include memory -include glog/logging.h"
     -DCMAKE_INSTALL_PREFIX=${SB_INSTALL_DIR}
     -DCeres_DIR=${SB_INSTALL_DIR}/lib/cmake/Ceres
     -DOpenCV_DIR=${SB_INSTALL_DIR}/lib/cmake/opencv4
