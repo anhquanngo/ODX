@@ -114,6 +114,7 @@ installruntimedeps() {
             libboost-system1.83.0 \
             libfreeimage3 \
             libgl1 \
+            libopengl0 \
             libglew2.2 \
             liblz4-1 \
             libmetis5 \
