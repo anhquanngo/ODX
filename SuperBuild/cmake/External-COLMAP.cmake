@@ -34,13 +34,16 @@ ExternalProject_Add(${_proj_name}
   GIT_TAG           3.9.1
   #--Update/Patch step----------
   UPDATE_COMMAND    ""
+  PATCH_COMMAND     ${CMAKE_COMMAND}
+                      -DCOLMAP_OPTION_MANAGER_CC=<SOURCE_DIR>/src/colmap/controllers/option_manager.cc
+                      -P ${CMAKE_CURRENT_LIST_DIR}/PatchCOLMAP-option-manager-miniglog.cmake
   #--Configure step-------------
   SOURCE_DIR        ${SB_SOURCE_DIR}/${_proj_name}
   CMAKE_GENERATOR   Ninja
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    # GCC 13+ / Ceres miniglog: force <memory> and system glog (absolute path beats miniglog shadow).
-    "-DCMAKE_CXX_FLAGS=-include memory -include /usr/include/glog/logging.h"
+    # GCC 13+ (Ubuntu 24.04): COLMAP 3.9.1 uses std::unique_ptr without <memory> in several TUs.
+    "-DCMAKE_CXX_FLAGS=-include memory"
     -DCMAKE_INSTALL_PREFIX=${SB_INSTALL_DIR}
     -DCeres_DIR=${SB_INSTALL_DIR}/lib/cmake/Ceres
     -DOpenCV_DIR=${SB_INSTALL_DIR}/lib/cmake/opencv4
