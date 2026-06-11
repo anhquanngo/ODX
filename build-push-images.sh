@@ -2,7 +2,7 @@
 #
 # Build & push ODX Docker images.
 # Order: GPU first, then CPU.
-# Tags: anhquan01/odx:gpu (GPU), anhquan01/odx:cpu (CPU)
+# Tags: anhquan01/odx:gpu-colmap (GPU + COLMAP), anhquan01/odx:cpu (CPU)
 #
 # Environment variables (optional):
 #   DOCKER_USER=anhquan01
@@ -24,7 +24,7 @@ SKIP_GPU_CHECK="${SKIP_GPU_CHECK:-0}"
 ODX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 IMG_CPU="${DOCKER_USER}/odx:cpu"
-IMG_GPU="${DOCKER_USER}/odx:gpu"
+IMG_GPU="${DOCKER_USER}/odx:gpu-colmap"
 
 log() { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >&2; }
 die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
