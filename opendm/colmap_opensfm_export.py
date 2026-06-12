@@ -715,6 +715,12 @@ def export_colmap_compute_statistics(
     tracks_manager = data.load_tracks_manager()
     _attach_reconstruction_metadata(data, reconstructions)
 
+    try:
+        td_err = osfm_stats.td_errors(data, tracks_manager, reconstructions)
+    except Exception as e:
+        log.WARNING("COLMAP 3d_errors skipped: %s" % e)
+        td_err = {}
+
     stats_dict = {
         "processing_statistics": _colmap_processing_statistics(
             data, reconstructions, opensfm_path
@@ -729,6 +735,7 @@ def export_colmap_compute_statistics(
         "rig_errors": osfm_stats.rig_statistics(data, reconstructions),
         "gps_errors": osfm_stats.gps_errors(reconstructions),
         "gcp_errors": osfm_stats.gcp_errors(data, reconstructions),
+        "3d_errors": td_err,
     }
 
     output_path = stats_dir
