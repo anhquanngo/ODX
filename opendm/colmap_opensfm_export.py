@@ -294,6 +294,34 @@ def colmap_undistort_needed(opensfm_path):
     return False
 
 
+def _reference_lla_path(opensfm_path):
+    return os.path.join(opensfm_path, "reference_lla.json")
+
+
+def _write_default_reference_lla(opensfm_path):
+    path = _reference_lla_path(opensfm_path)
+    with open(path, "w") as f:
+        json.dump(
+            {"latitude": 0.0, "longitude": 0.0, "altitude": 0.0},
+            f,
+            indent=4,
+        )
+    log.INFO("Wrote default reference_lla.json (non-georeferenced dataset)")
+    return path
+
+
+def _load_dataset_reference(data, opensfm_path):
+    """Load OpenSfM reference, creating a local origin if the file is missing."""
+    ref_path = _reference_lla_path(opensfm_path)
+    if not os.path.isfile(ref_path):
+        log.WARNING(
+            "reference_lla.json not found at %s; using default local origin"
+            % ref_path
+        )
+        _write_default_reference_lla(opensfm_path)
+    return data.load_reference()
+
+
 def align_colmap_reconstruction(opensfm_path, rerun=False):
     """
     Apply GPS/GCP similarity alignment to a COLMAP-exported OpenSfM reconstruction.
@@ -324,7 +352,7 @@ def align_colmap_reconstruction(opensfm_path, rerun=False):
         raise system.ExitException("Empty COLMAP reconstruction")
 
     reconstruction = reconstructions[0]
-    reconstruction.reference = data.load_reference()
+    reconstruction.reference = _load_dataset_reference(data, opensfm_path)
 
     for shot_id in list(reconstruction.shots.keys()):
         if shot_id not in data.images():
@@ -423,8 +451,8 @@ def export_colmap_sparse_to_opensfm(
     return out_path
 
 
-def _attach_reconstruction_metadata(data, reconstructions):
-    reference = data.load_reference()
+def _attach_reconstruction_metadata(data, reconstructions, opensfm_path):
+    reference = _load_dataset_reference(data, opensfm_path)
     for reconstruction in reconstructions:
         reconstruction.reference = reference
         for shot_id in list(reconstruction.shots.keys()):
@@ -713,7 +741,7 @@ def export_colmap_compute_statistics(
     data = DataSet(opensfm_path)
     reconstructions = data.load_reconstruction()
     tracks_manager = data.load_tracks_manager()
-    _attach_reconstruction_metadata(data, reconstructions)
+    _attach_reconstruction_metadata(data, reconstructions, opensfm_path)
 
     try:
         td_err = osfm_stats.td_errors(data, tracks_manager, reconstructions)

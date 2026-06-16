@@ -353,12 +353,10 @@ class OSFMContext:
             config_filename = self.get_config_file_path()
             with open(config_filename, 'w') as fout:
                 fout.write("\n".join(config))
-            
-            # We impose our own reference_lla
-            if reconstruction.is_georeferenced():
-                self.write_reference_lla(reconstruction.georef.utm_east_offset, reconstruction.georef.utm_north_offset, reconstruction.georef.proj4())
         else:
             log.WARNING("%s already exists, not rerunning OpenSfM setup" % list_path)
+
+        self.ensure_reference_lla(reconstruction, rerun)
 
     def get_config_file_path(self):
         return os.path.join(self.opensfm_project_path, 'config.yaml')
@@ -620,6 +618,32 @@ class OSFMContext:
         else:
             log.WARNING("Report %s already exported" % report_path)
     
+    def ensure_reference_lla(self, reconstruction, rerun=False):
+        """
+        Ensure opensfm/reference_lla.json exists.
+
+        Required by COLMAP GPS alignment and OpenSfM export paths. Written on every
+        setup even when image_list.txt already exists (e.g. WebODM retry).
+        """
+        reference_lla = self.path("reference_lla.json")
+        if io.file_exists(reference_lla) and not rerun:
+            return
+
+        if reconstruction.is_georeferenced():
+            self.write_reference_lla(
+                reconstruction.georef.utm_east_offset,
+                reconstruction.georef.utm_north_offset,
+                reconstruction.georef.proj4(),
+            )
+        else:
+            with open(reference_lla, 'w') as f:
+                f.write(json.dumps({
+                    'latitude': 0.0,
+                    'longitude': 0.0,
+                    'altitude': 0.0,
+                }, indent=4))
+            log.INFO("Wrote default reference_lla.json (non-georeferenced dataset)")
+
     def write_reference_lla(self, offset_x, offset_y, proj4):
         reference_lla = self.path("reference_lla.json")
 
