@@ -42,15 +42,19 @@ COPY --from=builder /usr/local /usr/local
 
 RUN apt-get update -y \
  && apt-get install -y ffmpeg libtbbmalloc2
+# Register SuperBuild libs (Abseil from Ceres/COLMAP) before apt runtime deps.
+RUN echo "/code/SuperBuild/install/lib" > /etc/ld.so.conf.d/odx-superbuild.conf \
+ && ldconfig
 # Install shared libraries that we depend on via APT, but *not*
 # the -dev packages to save space!
 # Also run a smoke test on ODX and OpenSfM
 RUN bash configure.sh installruntimedeps \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+  && ldconfig \
   && bash run.sh --help \
   && /code/SuperBuild/install/bin/colmap -h \
-  && bash -c "eval $(python3 -m opendm.context) && python3 -c 'from opensfm import io, pymap'"
+  && bash -c "eval \$(python3 /code/opendm/context.py) && python3 -c 'from opensfm import io, pymap'"
 
 # Entry point
 ENTRYPOINT ["python3", "/code/run.py"]
