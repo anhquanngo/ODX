@@ -52,8 +52,8 @@ ExternalProject_Add(${_proj_name}
   BINARY_DIR        ${_SB_BINARY_DIR}
   INSTALL_COMMAND    ""
   LOG_DOWNLOAD      OFF
-  LOG_CONFIGURE     OFF
-  LOG_BUILD         OFF
+  LOG_CONFIGURE     ON
+  LOG_BUILD         ON
 )
 else()
 ExternalProject_Add(${_proj_name}

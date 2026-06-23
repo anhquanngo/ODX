@@ -248,11 +248,17 @@ install() {
         exit 1
     fi
     make -j$(nproc) || {
-        echo "SuperBuild failed. COLMAP configure/build logs (if any):"
-        for log in colmap/stamp/colmap-configure*.log colmap/stamp/colmap-build*.log; do
+        echo "SuperBuild make failed. Recent external-project logs:"
+        for log in \
+            opensfm/stamp/opensfm-build*.log \
+            opensfm/stamp/opensfm-configure*.log \
+            colmap/stamp/colmap-build*.log \
+            colmap/stamp/colmap-configure*.log \
+            ceres/stamp/ceres-build*.log \
+            abseil/stamp/abseil-build*.log; do
             if [ -f "$log" ]; then
                 echo "========== $log =========="
-                tail -n 80 "$log"
+                tail -n 100 "$log"
             fi
         done
         exit 1
