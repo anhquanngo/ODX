@@ -37,11 +37,14 @@ ExternalProject_Add(${_proj_name}
   UPDATE_COMMAND    git submodule update --init --recursive
   PATCH_COMMAND     ${CMAKE_COMMAND}
     -DOPENSFM_BUNDLE_CMAKE=<SOURCE_DIR>/opensfm/src/bundle/CMakeLists.txt
+    -DOPENSFM_SRC_CMAKE=<SOURCE_DIR>/opensfm/src/CMakeLists.txt
     -DSB_INSTALL_DIR=${SB_INSTALL_DIR}
     -P ${CMAKE_CURRENT_LIST_DIR}/Patch-OpenSfM-gpu-absl.cmake
   SOURCE_DIR        ${SB_INSTALL_DIR}/bin/${_proj_name}
   CONFIGURE_COMMAND ${CMAKE_COMMAND} <SOURCE_DIR>/${_proj_name}/src
     -DCERES_ROOT_DIR=${SB_INSTALL_DIR}
+    -DCeres_DIR=${SB_INSTALL_DIR}/lib/cmake/Ceres
+    "-DCMAKE_PREFIX_PATH=${SB_INSTALL_DIR}"
     -DOpenCV_DIR=${OpenCV_DIR}
     -DADDITIONAL_INCLUDE_DIRS=${SB_INSTALL_DIR}/include
     -DYET_ADDITIONAL_INCLUDE_DIRS=${EXTRA_INCLUDE_DIRS}
