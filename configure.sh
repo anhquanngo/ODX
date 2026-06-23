@@ -229,10 +229,20 @@ install() {
 
     set -eo pipefail
     
+    CMAKE_EXTRA=()
+    if [ -n "${GPU_INSTALL:-}" ]; then
+        echo "GPU install: ODX_GPU_BUILD=ON (Ceres CUDA + COLMAP 3.11 GPU BA)"
+        if [ -f "${RUNPATH}/docker/install-cudss.sh" ]; then
+            bash "${RUNPATH}/docker/install-cudss.sh"
+        fi
+        export CUDSS_ROOT="${CUDSS_ROOT:-/usr/local/cudss}"
+        CMAKE_EXTRA+=(-DODX_GPU_BUILD=ON)
+    fi
+
     echo "Compiling SuperBuild"
     cd ${RUNPATH}/SuperBuild
     mkdir -p build && cd build
-    cmake .. && make -j$(nproc) || {
+    cmake .. "${CMAKE_EXTRA[@]}" && make -j$(nproc) || {
         echo "SuperBuild failed. COLMAP configure/build logs (if any):"
         for log in colmap/stamp/colmap-configure*.log colmap/stamp/colmap-build*.log; do
             if [ -f "$log" ]; then

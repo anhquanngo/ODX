@@ -1,5 +1,5 @@
-# Ceres MINIGLOG=ON does not provide glog FLAGS_logtostderr / FLAGS_v.
-# ODX headless COLMAP (feature_extractor, matcher, mapper) does not need log CLI options.
+# Ceres MINIGLOG=ON (CPU builds) does not provide glog FLAGS_logtostderr / FLAGS_v.
+# GPU builds use Ceres with MINIGLOG=OFF; patch is a no-op when patterns are absent.
 
 if(NOT DEFINED COLMAP_OPTION_MANAGER_CC)
   message(FATAL_ERROR "COLMAP_OPTION_MANAGER_CC is not set")

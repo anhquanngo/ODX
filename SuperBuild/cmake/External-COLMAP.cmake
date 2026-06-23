@@ -1,7 +1,6 @@
 set(_proj_name colmap)
 set(_SB_BINARY_DIR "${SB_BINARY_DIR}/${_proj_name}")
 
-# COLMAP SiftGPU may need CUDA stub libs at link time (same pattern as OpenMVS).
 set(GPU_CMAKE_ARGS "")
 if(UNIX AND NOT APPLE)
     if(EXISTS "/usr/local/cuda/lib64/stubs")
@@ -9,18 +8,41 @@ if(UNIX AND NOT APPLE)
     endif()
 endif()
 
-# Headless ODX pipeline: feature_extractor, exhaustive_matcher, mapper only.
-# Use COLMAP 3.9.1 (no PoseLib FetchContent — avoids network/hash failures in Docker).
-set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
-if(NOT WIN32 AND NOT APPLE)
-    if(EXISTS "/usr/local/cuda/bin/nvcc")
-        set(COLMAP_CUDA_ARGS
-            -DCUDA_ENABLED=ON
-            "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
-            # RTX 2080 Ti (sm_75); single arch avoids CMake list ";" pitfalls.
-            "-DCMAKE_CUDA_ARCHITECTURES=75"
-        )
+if(ODX_GPU_BUILD)
+    # 3.11+ provides Mapper.ba_use_gpu (needs Ceres built with CUDA/cuDSS).
+    set(COLMAP_GIT_TAG 3.11.1)
+    set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
+    if(NOT WIN32 AND NOT APPLE)
+        if(EXISTS "/usr/local/cuda/bin/nvcc")
+            set(COLMAP_CUDA_ARGS
+                -DCUDA_ENABLED=ON
+                "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
+                # Common datacenter / consumer NVIDIA archs (SiftGPU + Ceres CUDA).
+                "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
+            )
+        endif()
     endif()
+    message(STATUS "COLMAP: GPU pipeline tag ${COLMAP_GIT_TAG}")
+else()
+    # CPU image: stay on 3.9.1 (no PoseLib FetchContent churn).
+    set(COLMAP_GIT_TAG 3.9.1)
+    set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
+    if(NOT WIN32 AND NOT APPLE)
+        if(EXISTS "/usr/local/cuda/bin/nvcc")
+            set(COLMAP_CUDA_ARGS
+                -DCUDA_ENABLED=ON
+                "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
+                "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
+            )
+        endif()
+    endif()
+    message(STATUS "COLMAP: CPU pipeline tag ${COLMAP_GIT_TAG}")
+endif()
+
+set(_colmap_cxx_flags "")
+if(NOT ODX_GPU_BUILD AND COLMAP_GIT_TAG VERSION_LESS 3.10)
+    # GCC 13+ (Ubuntu 24.04): COLMAP 3.9.1 missing <memory> in some TUs.
+    set(_colmap_cxx_flags "-DCMAKE_CXX_FLAGS=-include memory")
 endif()
 
 ExternalProject_Add(${_proj_name}
@@ -28,22 +50,19 @@ ExternalProject_Add(${_proj_name}
   PREFIX            ${_SB_BINARY_DIR}
   TMP_DIR           ${_SB_BINARY_DIR}/tmp
   STAMP_DIR         ${_SB_BINARY_DIR}/stamp
-  #--Download step--------------
   DOWNLOAD_DIR      ${SB_DOWNLOAD_DIR}
   GIT_REPOSITORY    https://github.com/colmap/colmap.git
-  GIT_TAG           3.9.1
-  #--Update/Patch step----------
+  GIT_TAG           ${COLMAP_GIT_TAG}
   UPDATE_COMMAND    ""
   PATCH_COMMAND     ${CMAKE_COMMAND}
                       -DCOLMAP_OPTION_MANAGER_CC=<SOURCE_DIR>/src/colmap/controllers/option_manager.cc
+                      -DODX_GPU_BUILD=${ODX_GPU_BUILD}
                       -P ${CMAKE_CURRENT_LIST_DIR}/PatchCOLMAP-option-manager-miniglog.cmake
-  #--Configure step-------------
   SOURCE_DIR        ${SB_SOURCE_DIR}/${_proj_name}
   CMAKE_GENERATOR   Ninja
   CMAKE_ARGS
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    # GCC 13+ (Ubuntu 24.04): COLMAP 3.9.1 uses std::unique_ptr without <memory> in several TUs.
-    "-DCMAKE_CXX_FLAGS=-include memory"
+    ${_colmap_cxx_flags}
     -DCMAKE_INSTALL_PREFIX=${SB_INSTALL_DIR}
     -DCeres_DIR=${SB_INSTALL_DIR}/lib/cmake/Ceres
     -DOpenCV_DIR=${SB_INSTALL_DIR}/lib/cmake/opencv4
@@ -58,11 +77,8 @@ ExternalProject_Add(${_proj_name}
     ${GPU_CMAKE_ARGS}
     ${WIN32_CMAKE_ARGS}
     ${APPLE_CMAKE_ARGS}
-  #--Build step-----------------
   BINARY_DIR        ${_SB_BINARY_DIR}
-  #--Install step---------------
   INSTALL_DIR       ${SB_INSTALL_DIR}
-  #--Output logging-------------
   LOG_DOWNLOAD      ON
   LOG_CONFIGURE     ON
   LOG_BUILD         ON

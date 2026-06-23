@@ -3,13 +3,17 @@ FROM nvidia/cuda:12.9.1-devel-ubuntu24.04 AS builder
 # Env variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH="/code/SuperBuild/install/lib/python3.12/dist-packages:/code/SuperBuild/install/bin/opensfm" \
-    LD_LIBRARY_PATH="/code/SuperBuild/install/lib"
+    LD_LIBRARY_PATH="/code/SuperBuild/install/lib:/usr/local/cudss/lib" \
+    CUDSS_ROOT="/usr/local/cudss"
 
 # Prepare directories
 WORKDIR /code
 
 # Copy everything
 COPY . ./
+
+# cuDSS for Ceres/COLMAP GPU bundle adjustment (sparse Schur solver)
+RUN chmod +x docker/install-cudss.sh && bash docker/install-cudss.sh
 
 # Run the build
 RUN PORTABLE_INSTALL=YES GPU_INSTALL=YES bash configure.sh install
@@ -26,15 +30,14 @@ FROM nvidia/cuda:12.9.1-runtime-ubuntu24.04
 # Env variables
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONPATH="/code/SuperBuild/install/lib/python3.12/dist-packages:/code/SuperBuild/install/lib/python3.12:/code/SuperBuild/install/bin/opensfm" \
-    LD_LIBRARY_PATH="/code/SuperBuild/install/lib" \
+    LD_LIBRARY_PATH="/code/SuperBuild/install/lib:/usr/local/cudss/lib" \
+    CUDSS_ROOT="/usr/local/cudss" \
     PDAL_DRIVER_PATH="/code/SuperBuild/install/bin"
 
 WORKDIR /code
 
-# Copy everything we built from the builder
+# Copy everything we built from the builder (includes /usr/local/cudss + pip)
 COPY --from=builder /code /code
-
-# Copy the Python libraries installed via pip from the builder
 COPY --from=builder /usr/local /usr/local
 
 RUN apt-get update -y \

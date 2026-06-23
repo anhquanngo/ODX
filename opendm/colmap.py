@@ -117,12 +117,16 @@ class ColmapContext:
             profile_name='colmap_exhaustive_matcher',
         )
 
+        mapper_args = (
+            'mapper --database_path "%s" --image_path "%s" --output_path "%s"'
+            % (self.colmap_db, self.images_dir, self.sparse_dir)
+        )
+        if use_gpu:
+            # COLMAP >= 3.11 + Ceres CUDA/cuDSS (ODX GPU image only).
+            mapper_args += ' --Mapper.ba_use_gpu 1'
+
         self._run_colmap(
-            'mapper --database_path "%s" --image_path "%s" --output_path "%s"' % (
-                self.colmap_db,
-                self.images_dir,
-                self.sparse_dir,
-            ),
+            mapper_args,
             profile_name='colmap_mapper',
         )
 

@@ -123,6 +123,10 @@ endif()
 # Path to additional CMake modules
 set(CMAKE_MODULE_PATH ${SB_ROOT_DIR}/cmake)
 
+# GPU Docker (gpu.Dockerfile): Ceres CUDA+cuDSS + COLMAP 3.11 ba_use_gpu.
+# CPU / portable images leave this OFF (Ceres 2.2.0, COLMAP 3.9.1).
+option(ODX_GPU_BUILD "Build Ceres/COLMAP with GPU bundle adjustment support" OFF)
+
 include(ExternalProject)
 include(ExternalProject-Setup)
 
@@ -138,7 +142,11 @@ set(ODM_GFlags_Version 2.2.2)
 option(ODM_BUILD_GFlags "Force to build GFlags library" OFF)
 SETUP_EXTERNAL_PROJECT(GFlags ${ODM_GFlags_Version} ${ODM_BUILD_GFlags})
 
-set(ODM_Ceres_Version 2.0.0)
+if(ODX_GPU_BUILD)
+    set(ODM_Ceres_Version 2.3.0)
+else()
+    set(ODM_Ceres_Version 2.2.0)
+endif()
 option(ODM_BUILD_Ceres "Force to build Ceres library" OFF)
 SETUP_EXTERNAL_PROJECT(Ceres ${ODM_Ceres_Version} ${ODM_BUILD_Ceres})
 
