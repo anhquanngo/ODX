@@ -11,8 +11,8 @@ fi
 
 CUDSS_VERSION="${CUDSS_VERSION:-0.5.0.16}"
 CUDA_VER="${CUDA_VER:-12}"
-ARCHIVE="cudss-linux-x86_64-${CUDSS_VERSION}_cuda${CUDA_VER}-archive.tar.xz"
-URL="https://developer.download.nvidia.com/compute/cudss/redist/cudss/linux-x86_64/${ARCHIVE}"
+ARCHIVE="libcudss-linux-x86_64-${CUDSS_VERSION}_cuda${CUDA_VER}-archive.tar.xz"
+URL="https://developer.download.nvidia.com/compute/cudss/redist/libcudss/linux-x86_64/${ARCHIVE}"
 
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
@@ -29,7 +29,11 @@ fi
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-wget -q "${URL}" -O "${tmpdir}/cudss.tar.xz"
+echo "Downloading ${URL}"
+if ! wget -q "${URL}" -O "${tmpdir}/cudss.tar.xz"; then
+  echo "ERROR: wget failed (exit $?) — check URL and network: ${URL}"
+  exit 1
+fi
 tar -xf "${tmpdir}/cudss.tar.xz" -C "${tmpdir}"
 
 srcdir=$(find "${tmpdir}" -mindepth 1 -maxdepth 1 -type d | head -1)
