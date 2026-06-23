@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 
 from opendm import context
 from opendm import io
@@ -38,6 +39,26 @@ class ColmapContext:
             return colmap_in_path
 
         raise system.ExitException("Cannot find COLMAP binary. Install COLMAP or add it to ODX SuperBuild install/bin.")
+
+    def _mapper_supports_ba_gpu(self):
+        """COLMAP >= 3.11 with Ceres CUDA/cuDSS exposes --Mapper.ba_use_gpu."""
+        cached = getattr(self, '_mapper_ba_gpu_cache', None)
+        if cached is not None:
+            return cached
+        supported = False
+        try:
+            proc = subprocess.run(
+                [self.colmap_path, 'mapper', '-h'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                check=False,
+            )
+            supported = 'ba_use_gpu' in (proc.stdout or '')
+        except (OSError, ValueError):
+            supported = False
+        self._mapper_ba_gpu_cache = supported
+        return supported
 
     def _append_profile_log(self, name, delta):
         os.makedirs(self.colmap_root, exist_ok=True)
@@ -121,9 +142,13 @@ class ColmapContext:
             'mapper --database_path "%s" --image_path "%s" --output_path "%s"'
             % (self.colmap_db, self.images_dir, self.sparse_dir)
         )
-        if use_gpu:
-            # COLMAP >= 3.11 + Ceres CUDA/cuDSS (ODX GPU image only).
+        if use_gpu and self._mapper_supports_ba_gpu():
             mapper_args += ' --Mapper.ba_use_gpu 1'
+        elif use_gpu:
+            log.WARNING(
+                "COLMAP does not support --Mapper.ba_use_gpu (need COLMAP >= 3.11 built with "
+                "GPU_INSTALL=YES). Mapper will run on CPU."
+            )
 
         self._run_colmap(
             mapper_args,
