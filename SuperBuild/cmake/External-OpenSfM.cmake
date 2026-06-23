@@ -18,32 +18,27 @@ else()
 endif()
 
 set(_opensfm_deps ceres opencv gflags)
-set(_opensfm_patch_cmd "")
 
 if(ODX_GPU_BUILD AND NOT WIN32)
-  # Install Abseil shared libs from COLMAP/Ceres before OpenSfM builds pybundle.
-  list(APPEND _opensfm_deps colmap)
-  set(_opensfm_patch_cmd
-    PATCH_COMMAND ${CMAKE_COMMAND}
-      -DOPENSFM_BUNDLE_CMAKE=<SOURCE_DIR>/opensfm/src/bundle/CMakeLists.txt
-      -DSB_INSTALL_DIR=${SB_INSTALL_DIR}
-      -P ${CMAKE_CURRENT_LIST_DIR}/Patch-OpenSfM-gpu-absl.cmake
-  )
+  set(_opensfm_gpu_patch ON)
+else()
+  set(_opensfm_gpu_patch OFF)
 endif()
 
+if(_opensfm_gpu_patch)
 ExternalProject_Add(${_proj_name}
   DEPENDS           ${_opensfm_deps}
   PREFIX            ${_SB_BINARY_DIR}
   TMP_DIR           ${_SB_BINARY_DIR}/tmp
   STAMP_DIR         ${_SB_BINARY_DIR}/stamp
-  #--Download step--------------
   DOWNLOAD_DIR      ${SB_DOWNLOAD_DIR}
   GIT_REPOSITORY    https://github.com/WebODM/OpenSfM/
   GIT_TAG           91f58841370b0c28bc1248d038b1930fa11d0637
-  #--Update/Patch step----------
   UPDATE_COMMAND    git submodule update --init --recursive
-  ${_opensfm_patch_cmd}
-  #--Configure step-------------
+  PATCH_COMMAND     ${CMAKE_COMMAND}
+    -DOPENSFM_BUNDLE_CMAKE=<SOURCE_DIR>/opensfm/src/bundle/CMakeLists.txt
+    -DSB_INSTALL_DIR=${SB_INSTALL_DIR}
+    -P ${CMAKE_CURRENT_LIST_DIR}/Patch-OpenSfM-gpu-absl.cmake
   SOURCE_DIR        ${SB_INSTALL_DIR}/bin/${_proj_name}
   CONFIGURE_COMMAND ${CMAKE_COMMAND} <SOURCE_DIR>/${_proj_name}/src
     -DCERES_ROOT_DIR=${SB_INSTALL_DIR}
@@ -54,12 +49,36 @@ ExternalProject_Add(${_proj_name}
     -DPYTHON_EXECUTABLE=${PYTHON_EXE_PATH}
     ${WIN32_CMAKE_ARGS}
   BUILD_COMMAND ${BUILD_CMD}
-  #--Build step-----------------
   BINARY_DIR        ${_SB_BINARY_DIR}
-  #--Install step---------------
   INSTALL_COMMAND    ""
-  #--Output logging-------------
   LOG_DOWNLOAD      OFF
   LOG_CONFIGURE     OFF
   LOG_BUILD         OFF
 )
+else()
+ExternalProject_Add(${_proj_name}
+  DEPENDS           ${_opensfm_deps}
+  PREFIX            ${_SB_BINARY_DIR}
+  TMP_DIR           ${_SB_BINARY_DIR}/tmp
+  STAMP_DIR         ${_SB_BINARY_DIR}/stamp
+  DOWNLOAD_DIR      ${SB_DOWNLOAD_DIR}
+  GIT_REPOSITORY    https://github.com/WebODM/OpenSfM/
+  GIT_TAG           91f58841370b0c28bc1248d038b1930fa11d0637
+  UPDATE_COMMAND    git submodule update --init --recursive
+  SOURCE_DIR        ${SB_INSTALL_DIR}/bin/${_proj_name}
+  CONFIGURE_COMMAND ${CMAKE_COMMAND} <SOURCE_DIR>/${_proj_name}/src
+    -DCERES_ROOT_DIR=${SB_INSTALL_DIR}
+    -DOpenCV_DIR=${OpenCV_DIR}
+    -DADDITIONAL_INCLUDE_DIRS=${SB_INSTALL_DIR}/include
+    -DYET_ADDITIONAL_INCLUDE_DIRS=${EXTRA_INCLUDE_DIRS}
+    -DOPENSFM_BUILD_TESTS=off
+    -DPYTHON_EXECUTABLE=${PYTHON_EXE_PATH}
+    ${WIN32_CMAKE_ARGS}
+  BUILD_COMMAND ${BUILD_CMD}
+  BINARY_DIR        ${_SB_BINARY_DIR}
+  INSTALL_COMMAND    ""
+  LOG_DOWNLOAD      OFF
+  LOG_CONFIGURE     OFF
+  LOG_BUILD         OFF
+)
+endif()

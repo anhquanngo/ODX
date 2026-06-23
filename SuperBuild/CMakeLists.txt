@@ -184,6 +184,13 @@ foreach(lib ${custom_libs})
 	SETUP_EXTERNAL_PROJECT_CUSTOM(${lib})
 endforeach()
 
+# GPU OpenSfM pybundle links Abseil from COLMAP/Ceres install — run OpenSfM after COLMAP.
+if(ODX_GPU_BUILD AND NOT WIN32)
+	ExternalProject_Add_StepDependencies(opensfm patch colmap install)
+	ExternalProject_Add_StepDependencies(opensfm configure colmap install)
+	ExternalProject_Add_StepDependencies(opensfm build colmap install)
+endif()
+
 include(ProcessorCount)
 ProcessorCount(nproc)
 

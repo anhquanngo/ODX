@@ -242,7 +242,12 @@ install() {
     echo "Compiling SuperBuild"
     cd ${RUNPATH}/SuperBuild
     mkdir -p build && cd build
-    cmake .. "${CMAKE_EXTRA[@]}" && make -j$(nproc) || {
+    if ! cmake .. "${CMAKE_EXTRA[@]}" 2>&1 | tee cmake-configure.log; then
+        echo "SuperBuild CMake configure failed. Last lines:"
+        tail -n 60 cmake-configure.log
+        exit 1
+    fi
+    make -j$(nproc) || {
         echo "SuperBuild failed. COLMAP configure/build logs (if any):"
         for log in colmap/stamp/colmap-configure*.log colmap/stamp/colmap-build*.log; do
             if [ -f "$log" ]; then
