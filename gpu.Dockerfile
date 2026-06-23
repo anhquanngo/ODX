@@ -15,10 +15,11 @@ COPY . ./
 # cuDSS for Ceres/COLMAP GPU bundle adjustment (sparse Schur solver)
 RUN chmod +x docker/install-cudss.sh && bash docker/install-cudss.sh
 
-# Run the build
-RUN PORTABLE_INSTALL=YES GPU_INSTALL=YES bash configure.sh install
+# Run the build + verify OpenSfM before stripping build artifacts
+RUN PORTABLE_INSTALL=YES GPU_INSTALL=YES bash configure.sh install \
+ && bash -c 'eval $(python3 /code/opendm/context.py) && python3 -c "from opensfm import io, pymap; print(\"OpenSfM import OK\")"'
 
-# Clean Superbuild
+# Clean Superbuild intermediates (keeps SuperBuild/install libs)
 RUN bash configure.sh clean
 
 ### END Builder

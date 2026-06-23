@@ -148,6 +148,12 @@ else()
     set(ODM_Ceres_Version 2.2.0)
 endif()
 option(ODM_BUILD_Ceres "Force to build Ceres library" OFF)
+
+# GPU: shared Abseil must be in install/lib before Ceres/COLMAP/OpenSfM.
+if(ODX_GPU_BUILD AND NOT WIN32)
+    include(External-Abseil)
+endif()
+
 SETUP_EXTERNAL_PROJECT(Ceres ${ODM_Ceres_Version} ${ODM_BUILD_Ceres})
 
 set(custom_libs OpenSfM
@@ -184,10 +190,13 @@ foreach(lib ${custom_libs})
 	SETUP_EXTERNAL_PROJECT_CUSTOM(${lib})
 endforeach()
 
-# GPU OpenSfM pybundle links Abseil from COLMAP/Ceres install — run OpenSfM after COLMAP.
+# GPU OpenSfM pybundle links shared Abseil — run OpenSfM after COLMAP + Abseil install.
 if(ODX_GPU_BUILD AND NOT WIN32)
+	ExternalProject_Add_StepDependencies(opensfm patch abseil install)
 	ExternalProject_Add_StepDependencies(opensfm patch colmap install)
+	ExternalProject_Add_StepDependencies(opensfm configure abseil install)
 	ExternalProject_Add_StepDependencies(opensfm configure colmap install)
+	ExternalProject_Add_StepDependencies(opensfm build abseil install)
 	ExternalProject_Add_StepDependencies(opensfm build colmap install)
 endif()
 

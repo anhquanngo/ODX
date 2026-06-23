@@ -288,7 +288,9 @@ clean() {
         ${RUNPATH}/SuperBuild/install/bin/opensfm/opensfm/src/third_party/pybind11/.git
 
     # find in /code and delete static libraries and intermediate object files
-    find ${RUNPATH} -type f -name "*.a" -delete -or -type f -name "*.o" -delete
+    # Keep SuperBuild/install — runtime needs libabsl_*.so and other shared deps.
+    find ${RUNPATH} -type f -name "*.a" ! -path "*/SuperBuild/install/*" -delete
+    find ${RUNPATH} -type f -name "*.o" ! -path "*/SuperBuild/install/*" -delete
 }
 
 

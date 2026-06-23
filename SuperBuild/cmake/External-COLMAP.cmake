@@ -23,6 +23,7 @@ if(ODX_GPU_BUILD)
         endif()
     endif()
     message(STATUS "COLMAP: GPU pipeline tag ${COLMAP_GIT_TAG}")
+    list(APPEND COLMAP_CUDA_ARGS "-DCMAKE_PREFIX_PATH=${SB_INSTALL_DIR}")
 else()
     # CPU image: stay on 3.9.1 (no PoseLib FetchContent churn).
     set(COLMAP_GIT_TAG 3.9.1)

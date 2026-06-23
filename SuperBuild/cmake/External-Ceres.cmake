@@ -17,10 +17,12 @@ if(ODX_GPU_BUILD)
         GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
         GIT_TAG        8a566fcc156322160b96f8ca5f0ff755241c2d33
     )
+    set(_ceres_depends gflags abseil)
     list(APPEND _ceres_cmake_args
         -DUSE_CUDA=ON
         -DMINIGLOG=OFF
         -DCMAKE_CXX_STANDARD=17
+        "-DCMAKE_PREFIX_PATH=${SB_INSTALL_DIR}"
     )
     include(${CMAKE_CURRENT_LIST_DIR}/FindCUDSS.cmake)
     if(cudss_DIR)
@@ -42,8 +44,12 @@ else()
     message(STATUS "Ceres: CPU build (2.2.0, USE_CUDA=OFF)")
 endif()
 
+if(NOT ODX_GPU_BUILD)
+    set(_ceres_depends gflags)
+endif()
+
 ExternalProject_Add(${_proj_name}
-  DEPENDS           gflags
+  DEPENDS           ${_ceres_depends}
   PREFIX            ${_SB_BINARY_DIR}
   TMP_DIR           ${_SB_BINARY_DIR}/tmp
   STAMP_DIR         ${_SB_BINARY_DIR}/stamp
