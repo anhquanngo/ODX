@@ -1,6 +1,8 @@
 set(_proj_name ceres)
 set(_SB_BINARY_DIR "${SB_BINARY_DIR}/${_proj_name}")
 
+include(${CMAKE_CURRENT_LIST_DIR}/ODXCuda.cmake)
+
 # GPU COLMAP BA needs Ceres master (2.3 dev) + CUDA + cuDSS. CPU builds stay on 2.2.0.
 set(_ceres_cmake_args
     -DCMAKE_C_FLAGS=-fPIC
@@ -24,6 +26,12 @@ if(ODX_GPU_BUILD)
         -DCMAKE_CXX_STANDARD=17
         "-DCMAKE_PREFIX_PATH=${SB_INSTALL_DIR}"
     )
+    if(ODX_NVCC)
+        list(APPEND _ceres_cmake_args
+            "-DCMAKE_CUDA_COMPILER=${ODX_NVCC}"
+            "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
+        )
+    endif()
     include(${CMAKE_CURRENT_LIST_DIR}/FindCUDSS.cmake)
     if(cudss_DIR)
         list(APPEND _ceres_cmake_args -Dcudss_DIR=${cudss_DIR})

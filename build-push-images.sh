@@ -11,8 +11,13 @@
 #   BUILD_CPU=0|1           (default: 1) — built after GPU
 #   NO_CACHE=0|1            (default: 1)
 #   SKIP_GPU_CHECK=0|1      (default: 0)
+#   NOHUP=0|1               (default: 0) — detach via nohup, survive SSH disconnect
+#   LOG_FILE=path           (default: $ODX_DIR/build-push-images.log)
+#   PID_FILE=path           (default: $ODX_DIR/build-push-images.pid)
 #
 set -euo pipefail
+
+ODX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DOCKER_USER="${DOCKER_USER:-anhquan01}"
 PUSH="${PUSH:-1}"
@@ -20,8 +25,22 @@ BUILD_GPU="${BUILD_GPU:-1}"
 BUILD_CPU="${BUILD_CPU:-1}"
 NO_CACHE="${NO_CACHE:-1}"
 SKIP_GPU_CHECK="${SKIP_GPU_CHECK:-0}"
+NOHUP="${NOHUP:-0}"
+LOG_FILE="${LOG_FILE:-${ODX_DIR}/build-push-images.log}"
+PID_FILE="${PID_FILE:-${ODX_DIR}/build-push-images.pid}"
 
-ODX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Detach once: re-invoke under nohup so build continues after terminal closes.
+if [[ "${NOHUP}" == "1" && -z "${_ODX_NOHUP_CHILD:-}" ]]; then
+  export _ODX_NOHUP_CHILD=1
+  nohup "$0" "$@" >> "${LOG_FILE}" 2>&1 &
+  pid=$!
+  echo "${pid}" > "${PID_FILE}"
+  printf '\n[%s] Build started in background (PID %s)\n' "$(date '+%H:%M:%S')" "${pid}"
+  echo "Log:    ${LOG_FILE}"
+  echo "PID:    ${PID_FILE}"
+  echo "Follow: tail -f ${LOG_FILE}"
+  exit 0
+fi
 
 IMG_CPU="${DOCKER_USER}/odx:cpu"
 IMG_GPU="${DOCKER_USER}/odx:gpu-colmap"

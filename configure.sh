@@ -131,8 +131,13 @@ installbuilddeps(){
 
     _gpu_cuda_pkgs=""
     if [ -n "${GPU_INSTALL:-}" ]; then
-        echo "GPU install: adding NVIDIA CUDA toolkit build packages"
-        _gpu_cuda_pkgs="nvidia-cuda-toolkit nvidia-cuda-dev"
+        if [ -x /usr/local/cuda/bin/nvcc ]; then
+            echo "GPU install: using CUDA from /usr/local/cuda (skip apt nvidia-cuda-toolkit)"
+            export PATH="/usr/local/cuda/bin:${PATH}"
+        else
+            echo "GPU install: adding NVIDIA CUDA toolkit build packages"
+            _gpu_cuda_pkgs="nvidia-cuda-toolkit nvidia-cuda-dev"
+        fi
     fi
 
     for i in {1..20}; do
