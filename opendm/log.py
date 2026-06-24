@@ -5,6 +5,7 @@ import json
 import datetime
 import shutil
 import multiprocessing
+from contextlib import contextmanager
 from functools import lru_cache
 
 from opendm.arghelpers import double_quote, args_to_dict
@@ -80,8 +81,49 @@ class Logger:
             self.json['stages'].append({
                 'name': name,
                 'startTime': start_time.isoformat(),
+                'steps': [],
                 'messages': [],
             })
+
+    def log_json_stage_complete(self, start_time):
+        if self.json is not None and self.json['stages']:
+            stage = self.json['stages'][-1]
+            end_time = datetime.datetime.now()
+            elapsed = round((end_time - start_time).total_seconds(), 2)
+            stage['endTime'] = end_time.isoformat()
+            stage['totalTime'] = elapsed
+            return elapsed
+        return None
+
+    def _current_stage_name(self):
+        if self.json is not None and self.json['stages']:
+            return self.json['stages'][-1]['name']
+        return 'unknown'
+
+    @contextmanager
+    def stage_step(self, step_name):
+        stage_name = self._current_stage_name()
+        start_time = datetime.datetime.now()
+        step_entry = None
+
+        self.info('[%s] Starting %s' % (stage_name, step_name))
+
+        if self.json is not None and self.json['stages']:
+            step_entry = {
+                'name': step_name,
+                'startTime': start_time.isoformat(),
+            }
+            self.json['stages'][-1]['steps'].append(step_entry)
+
+        try:
+            yield
+        finally:
+            end_time = datetime.datetime.now()
+            elapsed = round((end_time - start_time).total_seconds(), 2)
+            self.info('[%s] Finished %s (elapsed: %ss)' % (stage_name, step_name, elapsed))
+            if step_entry is not None:
+                step_entry['endTime'] = end_time.isoformat()
+                step_entry['totalTime'] = elapsed
     
     def log_json_images(self, count):
         if self.json is not None:
@@ -120,9 +162,10 @@ class Logger:
 
             if self.json['stages']:
                 last_stage = self.json['stages'][-1]
-                last_stage['endTime'] = end_time.isoformat()
-                start_time = datetime.datetime.fromisoformat(last_stage['startTime'].replace("Z", "+00:00"))
-                last_stage['totalTime'] = round((end_time - start_time).total_seconds(), 2)
+                if 'endTime' not in last_stage:
+                    last_stage['endTime'] = end_time.isoformat()
+                    start_time = datetime.datetime.fromisoformat(last_stage['startTime'].replace("Z", "+00:00"))
+                    last_stage['totalTime'] = round((end_time - start_time).total_seconds(), 2)
             
     def info(self, msg):
         self.log(DEFAULT, msg, "INFO")

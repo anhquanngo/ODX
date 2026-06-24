@@ -72,94 +72,96 @@ class ODMMvsTexStage(types.ODM_Stage):
             unaligned_obj = io.related_file_path(odm_textured_model_obj, postfix="_unaligned")
 
             if not io.file_exists(odm_textured_model_obj) or self.rerun():
-                log.INFO('Writing MVS Textured file in: %s'
-                              % odm_textured_model_obj)
+                step_name = 'texturing_%s' % (r['out_dir'].replace(os.sep, '_'))
+                with self.step(step_name):
+                    log.INFO('Writing MVS Textured file in: %s'
+                                  % odm_textured_model_obj)
 
-                if os.path.isfile(unaligned_obj):
-                    os.unlink(unaligned_obj)
+                    if os.path.isfile(unaligned_obj):
+                        os.unlink(unaligned_obj)
 
-                # Format arguments to fit Mvs-Texturing app
-                skipGlobalSeamLeveling = ""
-                keepUnseenFaces = ""
-                nadir = ""
+                    # Format arguments to fit Mvs-Texturing app
+                    skipGlobalSeamLeveling = ""
+                    keepUnseenFaces = ""
+                    nadir = ""
 
-                if args.texturing_skip_global_seam_leveling:
-                    skipGlobalSeamLeveling = "--skip_global_seam_leveling"
-                if args.texturing_keep_unseen_faces:
-                    keepUnseenFaces = "--keep_unseen_faces"
-                if (r['nadir']):
-                    nadir = '--nadir_mode'
+                    if args.texturing_skip_global_seam_leveling:
+                        skipGlobalSeamLeveling = "--skip_global_seam_leveling"
+                    if args.texturing_keep_unseen_faces:
+                        keepUnseenFaces = "--keep_unseen_faces"
+                    if (r['nadir']):
+                        nadir = '--nadir_mode'
 
-                # mvstex definitions
-                kwargs = {
-                    'bin': context.mvstex_path,
-                    'out_dir': os.path.join(r['out_dir'], "odm_textured_model_geo"),
-                    'model': r['model'],
-                    'dataTerm': 'gmi',
-                    'outlierRemovalType': 'gauss_clamping',
-                    'skipGlobalSeamLeveling': skipGlobalSeamLeveling,
-                    'keepUnseenFaces': keepUnseenFaces,
-                    'toneMapping': 'none',
-                    'nadirMode': nadir,
-                    'numThreads': '--num_threads=%s' % args.max_concurrency,
-                    'maxTextureSize': '--max_texture_size=%s' % max_texture_size,
-                    'nvm_file': r['nvm_file'],
-                    'intermediate': '--no_intermediate_results' if (r['labeling_file'] or not reconstruction.multi_camera) else '',
-                    'labelingFile': '-L "%s"' % r['labeling_file'] if r['labeling_file'] else ''
-                }
+                    # mvstex definitions
+                    kwargs = {
+                        'bin': context.mvstex_path,
+                        'out_dir': os.path.join(r['out_dir'], "odm_textured_model_geo"),
+                        'model': r['model'],
+                        'dataTerm': 'gmi',
+                        'outlierRemovalType': 'gauss_clamping',
+                        'skipGlobalSeamLeveling': skipGlobalSeamLeveling,
+                        'keepUnseenFaces': keepUnseenFaces,
+                        'toneMapping': 'none',
+                        'nadirMode': nadir,
+                        'numThreads': '--num_threads=%s' % args.max_concurrency,
+                        'maxTextureSize': '--max_texture_size=%s' % max_texture_size,
+                        'nvm_file': r['nvm_file'],
+                        'intermediate': '--no_intermediate_results' if (r['labeling_file'] or not reconstruction.multi_camera) else '',
+                        'labelingFile': '-L "%s"' % r['labeling_file'] if r['labeling_file'] else ''
+                    }
 
-                mvs_tmp_dir = os.path.join(r['out_dir'], 'tmp')
+                    mvs_tmp_dir = os.path.join(r['out_dir'], 'tmp')
 
-                # mvstex creates a tmp directory, so make sure it is empty
-                if io.dir_exists(mvs_tmp_dir):
-                    log.INFO("Removing old tmp directory {}".format(mvs_tmp_dir))
-                    shutil.rmtree(mvs_tmp_dir)
+                    # mvstex creates a tmp directory, so make sure it is empty
+                    if io.dir_exists(mvs_tmp_dir):
+                        log.INFO("Removing old tmp directory {}".format(mvs_tmp_dir))
+                        shutil.rmtree(mvs_tmp_dir)
 
-                # run texturing binary
-                system.run('"{bin}" "{nvm_file}" "{model}" "{out_dir}" '
-                        '-d {dataTerm} -o {outlierRemovalType} '
-                        '-t {toneMapping} '
-                        '{intermediate} '
-                        '{skipGlobalSeamLeveling} '
-                        '{keepUnseenFaces} '
-                        '{nadirMode} '
-                        '{labelingFile} '
-                        '{numThreads} '
-                        '{maxTextureSize} '.format(**kwargs))
+                    # run texturing binary
+                    system.run('"{bin}" "{nvm_file}" "{model}" "{out_dir}" '
+                            '-d {dataTerm} -o {outlierRemovalType} '
+                            '-t {toneMapping} '
+                            '{intermediate} '
+                            '{skipGlobalSeamLeveling} '
+                            '{keepUnseenFaces} '
+                            '{nadirMode} '
+                            '{labelingFile} '
+                            '{numThreads} '
+                            '{maxTextureSize} '.format(**kwargs))
 
-                if r['primary'] and (not r['nadir'] or args.skip_3dmodel):
-                    # Single material?
-                    if args.texturing_single_material:
-                        log.INFO("Packing to single material")
+                    if r['primary'] and (not r['nadir'] or args.skip_3dmodel):
+                        # Single material?
+                        if args.texturing_single_material:
+                            log.INFO("Packing to single material")
 
-                        packed_dir = os.path.join(r['out_dir'], 'packed')
-                        if io.dir_exists(packed_dir):
-                            log.INFO("Removing old packed directory {}".format(packed_dir))
-                            shutil.rmtree(packed_dir)
-                        
-                        try:
-                            obj_pack(os.path.join(r['out_dir'], tree.odm_textured_model_obj), packed_dir, _info=log.INFO)
+                            packed_dir = os.path.join(r['out_dir'], 'packed')
+                            if io.dir_exists(packed_dir):
+                                log.INFO("Removing old packed directory {}".format(packed_dir))
+                                shutil.rmtree(packed_dir)
                             
-                            # Move packed/* into texturing folder
-                            system.delete_files(r['out_dir'], (".vec", ))
-                            system.move_files(packed_dir, r['out_dir'])
-                            if os.path.isdir(packed_dir):
-                                os.rmdir(packed_dir)
-                        except Exception as e:
-                            log.WARNING(str(e))
+                            try:
+                                obj_pack(os.path.join(r['out_dir'], tree.odm_textured_model_obj), packed_dir, _info=log.INFO)
+                                
+                                # Move packed/* into texturing folder
+                                system.delete_files(r['out_dir'], (".vec", ))
+                                system.move_files(packed_dir, r['out_dir'])
+                                if os.path.isdir(packed_dir):
+                                    os.rmdir(packed_dir)
+                            except Exception as e:
+                                log.WARNING(str(e))
 
 
-                # Backward compatibility: copy odm_textured_model_geo.mtl to odm_textured_model.mtl
-                # for certain older WebODM clients which expect a odm_textured_model.mtl
-                # to be present for visualization
-                # We should remove this at some point in the future
-                geo_mtl = os.path.join(r['out_dir'], 'odm_textured_model_geo.mtl')
-                if io.file_exists(geo_mtl):
-                    nongeo_mtl = os.path.join(r['out_dir'], 'odm_textured_model.mtl')
-                    shutil.copy(geo_mtl, nongeo_mtl)
+                    # Backward compatibility: copy odm_textured_model_geo.mtl to odm_textured_model.mtl
+                    # for certain older WebODM clients which expect a odm_textured_model.mtl
+                    # to be present for visualization
+                    # We should remove this at some point in the future
+                    geo_mtl = os.path.join(r['out_dir'], 'odm_textured_model_geo.mtl')
+                    if io.file_exists(geo_mtl):
+                        nongeo_mtl = os.path.join(r['out_dir'], 'odm_textured_model.mtl')
+                        shutil.copy(geo_mtl, nongeo_mtl)
 
-                progress += progress_per_run
-                self.update_progress(progress)
+                    progress += progress_per_run
+                    self.update_progress(progress)
             else:
                 log.WARNING('Found a valid texture file in: %s'
                                 % odm_textured_model_obj)

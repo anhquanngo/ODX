@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 
@@ -41,23 +42,36 @@ class ColmapContext:
         raise system.ExitException("Cannot find COLMAP binary. Install COLMAP or add it to ODX SuperBuild install/bin.")
 
     def _mapper_supports_ba_gpu(self):
-        """COLMAP >= 3.11 with Ceres CUDA/cuDSS exposes --Mapper.ba_use_gpu."""
+        """COLMAP >= 3.11 built with CUDA exposes --Mapper.ba_use_gpu."""
         cached = getattr(self, '_mapper_ba_gpu_cache', None)
         if cached is not None:
             return cached
         supported = False
         try:
             proc = subprocess.run(
-                [self.colmap_path, 'mapper', '-h'],
+                [self.colmap_path, '-h'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
                 check=False,
+                timeout=30,
             )
-            supported = 'ba_use_gpu' in (proc.stdout or '')
-        except (OSError, ValueError):
+            output = proc.stdout or ''
+            # mapper -h is empty when COLMAP is patched for Ceres miniglog; use main banner.
+            if 'without CUDA' in output:
+                supported = False
+            elif 'with CUDA' in output:
+                match = re.search(r'COLMAP\s+(\d+)\.(\d+)', output)
+                if match:
+                    major, minor = int(match.group(1)), int(match.group(2))
+                    supported = (major, minor) >= (3, 11)
+                else:
+                    supported = True
+        except (OSError, ValueError, subprocess.TimeoutExpired):
             supported = False
         self._mapper_ba_gpu_cache = supported
+        if supported:
+            log.INFO("COLMAP mapper GPU bundle adjustment enabled (--Mapper.ba_use_gpu)")
         return supported
 
     def _append_profile_log(self, name, delta):
@@ -69,9 +83,12 @@ class ColmapContext:
         if self.benchmarking_file:
             system.benchmark(start, self.benchmarking_file, name)
 
-    def _run_colmap(self, args, profile_name=None):
+    def _run_colmap(self, args, profile_name=None, heartbeat_label=None):
         start = system.now_raw()
-        system.run('"%s" %s' % (self.colmap_path, args))
+        system.run(
+            '"%s" %s' % (self.colmap_path, args),
+            heartbeat_label=heartbeat_label or profile_name,
+        )
         delta = (system.now_raw() - start).total_seconds()
         if profile_name:
             self._append_profile_log(profile_name, delta)
@@ -114,29 +131,33 @@ class ColmapContext:
         sparse_start = system.now_raw()
 
         # OpenMVS InterfaceCOLMAP only imports PINHOLE / SIMPLE_PINHOLE from cameras.bin.
-        self._run_colmap(
-            'feature_extractor --database_path "%s" --image_path "%s" '
-            "--ImageReader.single_camera 1 "
-            "--ImageReader.camera_model PINHOLE "
-            "--SiftExtraction.use_gpu %s "
-            # 2000px matches ODX OpenSfM feature_process_size; lowers SiftGPU VRAM vs 3200.
-            "--SiftExtraction.max_image_size 2000 "
-            "--SiftExtraction.max_num_features %s" % (
-                self.colmap_db,
-                self.images_dir,
-                use_gpu,
-                args.min_num_features,
-            ),
-            profile_name='colmap_feature_extractor',
-        )
+        with log.logger.stage_step('feature_extractor'):
+            self._run_colmap(
+                'feature_extractor --database_path "%s" --image_path "%s" '
+                "--ImageReader.single_camera 1 "
+                "--ImageReader.camera_model PINHOLE "
+                "--SiftExtraction.use_gpu %s "
+                # 2000px matches ODX OpenSfM feature_process_size; lowers SiftGPU VRAM vs 3200.
+                "--SiftExtraction.max_image_size 2000 "
+                "--SiftExtraction.max_num_features %s" % (
+                    self.colmap_db,
+                    self.images_dir,
+                    use_gpu,
+                    args.min_num_features,
+                ),
+                profile_name='colmap_feature_extractor',
+                heartbeat_label='colmap feature_extractor',
+            )
 
-        self._run_colmap(
-            'exhaustive_matcher --database_path "%s" --SiftMatching.use_gpu %s' % (
-                self.colmap_db,
-                use_gpu,
-            ),
-            profile_name='colmap_exhaustive_matcher',
-        )
+        with log.logger.stage_step('matcher'):
+            self._run_colmap(
+                'exhaustive_matcher --database_path "%s" --SiftMatching.use_gpu %s' % (
+                    self.colmap_db,
+                    use_gpu,
+                ),
+                profile_name='colmap_exhaustive_matcher',
+                heartbeat_label='colmap exhaustive_matcher',
+            )
 
         mapper_args = (
             'mapper --database_path "%s" --image_path "%s" --output_path "%s"'
@@ -146,14 +167,16 @@ class ColmapContext:
             mapper_args += ' --Mapper.ba_use_gpu 1'
         elif use_gpu:
             log.WARNING(
-                "COLMAP does not support --Mapper.ba_use_gpu (need COLMAP >= 3.11 built with "
-                "GPU_INSTALL=YES). Mapper will run on CPU."
+                "COLMAP mapper GPU BA unavailable (need COLMAP >= 3.11 built with CUDA). "
+                "Mapper will run on CPU."
             )
 
-        self._run_colmap(
-            mapper_args,
-            profile_name='colmap_mapper',
-        )
+        with log.logger.stage_step('mapper'):
+            self._run_colmap(
+                mapper_args,
+                profile_name='colmap_mapper',
+                heartbeat_label='colmap mapper',
+            )
 
         self._benchmark(sparse_start, 'colmap_sparse')
 

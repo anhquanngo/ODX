@@ -102,12 +102,13 @@ class ODMOrthoPhotoStage(types.ODM_Stage):
                 kwargs['vars'] = ' '.join(['-co %s=%s' % (k, orthophoto_vars[k]) for k in orthophoto_vars])
                 kwargs['ortho'] = tree.odm_orthophoto_tif # Render directly to final file
 
-            # run odm_orthophoto
-            log.INFO('Creating GeoTIFF')
-            system.run('"{odm_ortho_bin}" -inputFiles {models} '
-                       '-logFile "{log}" -outputFile "{ortho}" -resolution {res} -verbose '
-                       '-outputCornerFile "{corners}" {bands} {depth_idx} {inpaint} '
-                       '{utm_offsets} {a_srs} {vars} {gdal_configs} '.format(**kwargs), env_vars={'OMP_NUM_THREADS': args.max_concurrency})
+            with self.step("render_orthophoto"):
+                # run odm_orthophoto
+                log.INFO('Creating GeoTIFF')
+                system.run('"{odm_ortho_bin}" -inputFiles {models} '
+                           '-logFile "{log}" -outputFile "{ortho}" -resolution {res} -verbose '
+                           '-outputCornerFile "{corners}" {bands} {depth_idx} {inpaint} '
+                           '{utm_offsets} {a_srs} {vars} {gdal_configs} '.format(**kwargs), env_vars={'OMP_NUM_THREADS': args.max_concurrency})
 
             # Create georeferenced GeoTiff
             if reconstruction.is_georeferenced():
@@ -117,23 +118,25 @@ class ODMOrthoPhotoStage(types.ODM_Stage):
                 # We want to use the full orthophoto, not the cropped one.
                 submodel_run = is_submodel(tree.opensfm)
                 if args.orthophoto_cutline:
-                    cutline_file = os.path.join(tree.odm_orthophoto, "cutline.gpkg")
+                    with self.step("compute_cutline"):
+                        cutline_file = os.path.join(tree.odm_orthophoto, "cutline.gpkg")
 
-                    compute_cutline(tree.odm_orthophoto_tif, 
-                                    bounds_file_path,
-                                    cutline_file,
-                                    args.max_concurrency,
-                                    scale=0.25)
-                    
-                    if submodel_run:
-                        orthophoto.compute_mask_raster(tree.odm_orthophoto_tif, cutline_file, 
-                                            os.path.join(tree.odm_orthophoto, "odm_orthophoto_cut.tif"),
-                                            blend_distance=20, only_max_coords_feature=True)
-                    else:
-                        log.INFO("Not a submodel run, skipping mask raster generation")
+                        compute_cutline(tree.odm_orthophoto_tif, 
+                                        bounds_file_path,
+                                        cutline_file,
+                                        args.max_concurrency,
+                                        scale=0.25)
+                        
+                        if submodel_run:
+                            orthophoto.compute_mask_raster(tree.odm_orthophoto_tif, cutline_file, 
+                                                os.path.join(tree.odm_orthophoto, "odm_orthophoto_cut.tif"),
+                                                blend_distance=20, only_max_coords_feature=True)
+                        else:
+                            log.INFO("Not a submodel run, skipping mask raster generation")
 
-                orthophoto.post_orthophoto_steps(args, bounds_file_path, tree.odm_orthophoto_tif, tree.orthophoto_tiles, resolution, 
-                    reconstruction, tree, not outputs["large"])
+                with self.step("post_orthophoto"):
+                    orthophoto.post_orthophoto_steps(args, bounds_file_path, tree.odm_orthophoto_tif, tree.orthophoto_tiles, resolution, 
+                        reconstruction, tree, not outputs["large"])
 
                 # Generate feathered orthophoto also
                 if args.orthophoto_cutline and submodel_run:

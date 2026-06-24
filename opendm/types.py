@@ -434,6 +434,9 @@ class ODM_Stage:
         return (self.args.rerun is not None and self.args.rerun == self.name) or \
                      (self.args.rerun_all) or \
                      (self.args.rerun_from is not None and self.name in self.args.rerun_from)
+
+    def step(self, step_name):
+        return log.logger.stage_step(step_name)
     
     def run(self, outputs = {}):
         start_time = system.now_raw()
@@ -452,7 +455,11 @@ class ODM_Stage:
         except Exception as e:
             log.WARNING("Cannot write benchmark file: %s" % str(e))
 
-        log.INFO('Finished %s stage' % self.name)
+        elapsed = log.logger.log_json_stage_complete(start_time)
+        if elapsed is not None:
+            log.INFO('Finished %s stage (elapsed: %ss)' % (self.name, elapsed))
+        else:
+            log.INFO('Finished %s stage' % self.name)
         self.update_progress_end()
 
         # Last stage?

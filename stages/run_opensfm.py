@@ -40,37 +40,44 @@ class ODMOpenSfMStage(types.ODM_Stage):
                 raise system.ExitException("COLMAP SfM engine is not yet supported with split-merge.")
 
             octx = OSFMContext(tree.opensfm)
-            octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, rerun=self.rerun())
-            octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
+            with self.step("setup"):
+                octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, rerun=self.rerun())
+            with self.step("photos_to_metadata"):
+                octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
             self.update_progress(20)
 
             cctx = ColmapContext(tree.root_path, tree.opensfm, tree.benchmarking)
-            cctx.setup(self.rerun())
+            with self.step("colmap_setup"):
+                cctx.setup(self.rerun())
             cctx.run_sparse(args)
             self.update_progress(45)
 
-            cctx.export_opensfm_reconstruction(self.rerun())
+            with self.step("colmap_export_opensfm"):
+                cctx.export_opensfm_reconstruction(self.rerun())
             self.update_progress(50)
 
-            align_colmap_reconstruction(tree.opensfm, self.rerun())
+            with self.step("align_colmap_reconstruction"):
+                align_colmap_reconstruction(tree.opensfm, self.rerun())
             self.update_progress(58)
 
             if not args.skip_report:
-                octx.export_stats(self.rerun(), colmap=True)
+                with self.step("export_stats"):
+                    octx.export_stats(self.rerun(), colmap=True)
 
             if reconstruction.is_georeferenced() and (
                 not io.file_exists(tree.opensfm_topocentric_reconstruction) or self.rerun()
             ):
-                octx.run(
-                    'export_geocoords --reconstruction --proj "%s" --offset-x %s --offset-y %s'
-                    % (
-                        reconstruction.georef.proj4(),
-                        reconstruction.georef.utm_east_offset,
-                        reconstruction.georef.utm_north_offset,
+                with self.step("export_geocoords"):
+                    octx.run(
+                        'export_geocoords --reconstruction --proj "%s" --offset-x %s --offset-y %s'
+                        % (
+                            reconstruction.georef.proj4(),
+                            reconstruction.georef.utm_east_offset,
+                            reconstruction.georef.utm_north_offset,
+                        )
                     )
-                )
-                shutil.move(tree.opensfm_reconstruction, tree.opensfm_topocentric_reconstruction)
-                shutil.move(tree.opensfm_geocoords_reconstruction, tree.opensfm_reconstruction)
+                    shutil.move(tree.opensfm_reconstruction, tree.opensfm_topocentric_reconstruction)
+                    shutil.move(tree.opensfm_geocoords_reconstruction, tree.opensfm_reconstruction)
 
             outputs['undist_image_max_size'] = max(
                 gsd.image_max_size(
@@ -97,23 +104,26 @@ class ODMOpenSfMStage(types.ODM_Stage):
                 if io.file_exists(nominal_done):
                     os.remove(nominal_done)
 
-            octx.convert_and_undistort(need_undistort)
+            with self.step("convert_and_undistort"):
+                octx.convert_and_undistort(need_undistort)
             self.update_progress(80)
 
-            octx.extract_cameras(tree.path("cameras.json"), self.rerun())
+            with self.step("extract_cameras"):
+                octx.extract_cameras(tree.path("cameras.json"), self.rerun())
 
             nvm_rerun = (
                 self.rerun()
                 or need_undistort
                 or not io.file_exists(tree.opensfm_reconstruction_nvm)
             )
-            if nvm_rerun:
-                octx.run('export_visualsfm --points')
-            else:
-                log.WARNING(
-                    'Found a valid OpenSfM NVM reconstruction file in: %s'
-                    % tree.opensfm_reconstruction_nvm
-                )
+            with self.step("export_visualsfm"):
+                if nvm_rerun:
+                    octx.run('export_visualsfm --points')
+                else:
+                    log.WARNING(
+                        'Found a valid OpenSfM NVM reconstruction file in: %s'
+                        % tree.opensfm_reconstruction_nvm
+                    )
 
             self.update_progress(95)
             log.INFO(
@@ -122,14 +132,20 @@ class ODMOpenSfMStage(types.ODM_Stage):
             return
 
         octx = OSFMContext(tree.opensfm)
-        octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, rerun=self.rerun())
-        octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
+        with self.step("setup"):
+            octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, rerun=self.rerun())
+        with self.step("photos_to_metadata"):
+            octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
         self.update_progress(20)
-        octx.feature_matching(self.rerun())
+        with self.step("feature_matching"):
+            octx.feature_matching(self.rerun())
         self.update_progress(30)
-        octx.create_tracks(self.rerun())
-        octx.reconstruct(args.rolling_shutter, reconstruction.is_georeferenced() and (not args.sfm_no_partial), self.rerun())
-        octx.extract_cameras(tree.path("cameras.json"), self.rerun())
+        with self.step("create_tracks"):
+            octx.create_tracks(self.rerun())
+        with self.step("reconstruct"):
+            octx.reconstruct(args.rolling_shutter, reconstruction.is_georeferenced() and (not args.sfm_no_partial), self.rerun())
+        with self.step("extract_cameras"):
+            octx.extract_cameras(tree.path("cameras.json"), self.rerun())
         self.update_progress(70)
 
         def cleanup_disk_space():
@@ -157,16 +173,18 @@ class ODMOpenSfMStage(types.ODM_Stage):
             # rerun without --skip-report a --rerun-* parameter (due to the reconstruction.json file)
             # being replaced below. It's an isolated use case.
 
-            octx.export_stats(self.rerun())
+            with self.step("export_stats"):
+                octx.export_stats(self.rerun())
         
         self.update_progress(75)
 
         # We now switch to a geographic CRS
         if reconstruction.is_georeferenced() and (not io.file_exists(tree.opensfm_topocentric_reconstruction) or self.rerun()):
-            octx.run('export_geocoords --reconstruction --proj "%s" --offset-x %s --offset-y %s' % 
-                (reconstruction.georef.proj4(), reconstruction.georef.utm_east_offset, reconstruction.georef.utm_north_offset))
-            shutil.move(tree.opensfm_reconstruction, tree.opensfm_topocentric_reconstruction)
-            shutil.move(tree.opensfm_geocoords_reconstruction, tree.opensfm_reconstruction)
+            with self.step("export_geocoords"):
+                octx.run('export_geocoords --reconstruction --proj "%s" --offset-x %s --offset-y %s' % 
+                    (reconstruction.georef.proj4(), reconstruction.georef.utm_east_offset, reconstruction.georef.utm_north_offset))
+                shutil.move(tree.opensfm_reconstruction, tree.opensfm_topocentric_reconstruction)
+                shutil.move(tree.opensfm_geocoords_reconstruction, tree.opensfm_reconstruction)
         else:
             log.WARNING("Will skip exporting %s" % tree.opensfm_geocoords_reconstruction)
         
@@ -271,7 +289,8 @@ class ODMOpenSfMStage(types.ODM_Stage):
 
             undistort_pipeline.append(align_to_primary_band)
 
-        octx.convert_and_undistort(self.rerun(), undistort_callback, image_list_override)
+        with self.step("convert_and_undistort"):
+            octx.convert_and_undistort(self.rerun(), undistort_callback, image_list_override)
 
         self.update_progress(95)
 
@@ -280,13 +299,15 @@ class ODMOpenSfMStage(types.ODM_Stage):
 
             # Undistort primary band and write undistorted 
             # reconstruction.json, tracks.csv
-            octx.convert_and_undistort(self.rerun(), undistort_callback, runId='primary')
+            with self.step("convert_and_undistort_primary"):
+                octx.convert_and_undistort(self.rerun(), undistort_callback, runId='primary')
 
-        if not io.file_exists(tree.opensfm_reconstruction_nvm) or self.rerun():
-            octx.run('export_visualsfm --points')
-        else:
-            log.WARNING('Found a valid OpenSfM NVM reconstruction file in: %s' %
-                            tree.opensfm_reconstruction_nvm)
+        with self.step("export_visualsfm"):
+            if not io.file_exists(tree.opensfm_reconstruction_nvm) or self.rerun():
+                octx.run('export_visualsfm --points')
+            else:
+                log.WARNING('Found a valid OpenSfM NVM reconstruction file in: %s' %
+                                tree.opensfm_reconstruction_nvm)
         
         if reconstruction.multi_camera:
             log.INFO("Multiple bands found")
@@ -325,10 +346,11 @@ class ODMOpenSfMStage(types.ODM_Stage):
         if args.fast_orthophoto:
             output_file = octx.path('reconstruction.ply')
 
-            if not io.file_exists(output_file) or self.rerun():
-                octx.run('export_ply --no-cameras --point-num-views')
-            else:
-                log.WARNING("Found a valid PLY reconstruction in %s" % output_file)
+            with self.step("export_ply"):
+                if not io.file_exists(output_file) or self.rerun():
+                    octx.run('export_ply --no-cameras --point-num-views')
+                else:
+                    log.WARNING("Found a valid PLY reconstruction in %s" % output_file)
 
         cleanup_disk_space()
 

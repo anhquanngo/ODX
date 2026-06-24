@@ -27,33 +27,35 @@ class ODMFilterPoints(types.ODM_Stage):
 
             # Check if we need to compute boundary
             if args.auto_boundary:
-                if reconstruction.is_georeferenced():
-                    if not 'boundary' in outputs:
-                        boundary_distance = None
+                with self.step("compute_boundary"):
+                    if reconstruction.is_georeferenced():
+                        if not 'boundary' in outputs:
+                            boundary_distance = None
 
-                        if args.auto_boundary_distance > 0:
-                            boundary_distance = args.auto_boundary_distance
+                            if args.auto_boundary_distance > 0:
+                                boundary_distance = args.auto_boundary_distance
+                            else:
+                                avg_gsd = gsd.opensfm_reconstruction_average_gsd(tree.opensfm_reconstruction)
+                                if avg_gsd is not None:
+                                    boundary_distance = avg_gsd * 100 # 100 is arbitrary
+                                
+                            if boundary_distance is not None:
+                                outputs['boundary'] = compute_boundary_from_shots(tree.opensfm_reconstruction, boundary_distance, reconstruction.get_proj_offset())
+                                if outputs['boundary'] is None:
+                                    log.WARNING("Cannot compute boundary from camera shots")
+                            else:
+                                log.WARNING("Cannot compute boundary (GSD cannot be estimated)")
                         else:
-                            avg_gsd = gsd.opensfm_reconstruction_average_gsd(tree.opensfm_reconstruction)
-                            if avg_gsd is not None:
-                                boundary_distance = avg_gsd * 100 # 100 is arbitrary
-                            
-                        if boundary_distance is not None:
-                            outputs['boundary'] = compute_boundary_from_shots(tree.opensfm_reconstruction, boundary_distance, reconstruction.get_proj_offset())
-                            if outputs['boundary'] is None:
-                                log.WARNING("Cannot compute boundary from camera shots")
-                        else:
-                            log.WARNING("Cannot compute boundary (GSD cannot be estimated)")
+                            log.WARNING("--auto-boundary set but so is --boundary, will use --boundary")
                     else:
-                        log.WARNING("--auto-boundary set but so is --boundary, will use --boundary")
-                else:
-                    log.WARNING("Not a georeferenced reconstruction, will ignore --auto-boundary")
+                        log.WARNING("Not a georeferenced reconstruction, will ignore --auto-boundary")
                     
-            point_cloud.filter(inputPointCloud, tree.filtered_point_cloud, tree.filtered_point_cloud_stats,
-                                standard_deviation=args.pc_filter, 
-                                sample_radius=args.pc_sample,
-                                boundary=boundary_offset(outputs.get('boundary'), reconstruction.get_proj_offset()),
-                                max_concurrency=args.max_concurrency)
+            with self.step("filter_points"):
+                point_cloud.filter(inputPointCloud, tree.filtered_point_cloud, tree.filtered_point_cloud_stats,
+                                    standard_deviation=args.pc_filter, 
+                                    sample_radius=args.pc_sample,
+                                    boundary=boundary_offset(outputs.get('boundary'), reconstruction.get_proj_offset()),
+                                    max_concurrency=args.max_concurrency)
             
             # Quick check
             info = point_cloud.ply_info(tree.filtered_point_cloud)

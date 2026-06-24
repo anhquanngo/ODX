@@ -129,6 +129,12 @@ installruntimedeps() {
 installbuilddeps(){
     echo "Installing build dependencies"
 
+    _gpu_cuda_pkgs=""
+    if [ -n "${GPU_INSTALL:-}" ]; then
+        echo "GPU install: adding NVIDIA CUDA toolkit build packages"
+        _gpu_cuda_pkgs="nvidia-cuda-toolkit nvidia-cuda-dev"
+    fi
+
     for i in {1..20}; do
         sudo apt-get install -y --no-install-recommends \
             build-essential \
@@ -181,7 +187,8 @@ installbuilddeps(){
             liblz4-dev \
             libmetis-dev \
             libsqlite3-dev \
-            libgoogle-perftools-dev
+            libgoogle-perftools-dev \
+            ${_gpu_cuda_pkgs}
         break
         echo "Attempt $i failed, sleeping..."
         sleep 30
@@ -189,7 +196,7 @@ installbuilddeps(){
 }
 
 installreqs() {
-    cd /code
+    cd "${RUNPATH}"
     
     ## Set up library paths
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$RUNPATH/SuperBuild/install/lib

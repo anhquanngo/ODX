@@ -31,8 +31,9 @@ endif()
 
 SET(GPU_CMAKE_ARGS "")
 if(UNIX)
-    if (EXISTS "/usr/local/cuda/lib64/stubs")
-        SET(GPU_CMAKE_ARGS -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs)
+    include(${CMAKE_CURRENT_LIST_DIR}/ODXCuda.cmake)
+    if(ODX_CUDA_STUB_DIR)
+        SET(GPU_CMAKE_ARGS -DCMAKE_LIBRARY_PATH=${ODX_CUDA_STUB_DIR})
     endif()
 endif()
 

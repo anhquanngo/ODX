@@ -43,44 +43,46 @@ class ODMReport(types.ODM_Stage):
 
         if not os.path.exists(tree.odm_report): system.mkdir_p(tree.odm_report)
 
-        log.INFO("Exporting shots.geojson")
+        with self.step("export_shots"):
+            log.INFO("Exporting shots.geojson")
 
-        shots_geojson = os.path.join(tree.odm_report, "shots.geojson")
-        if not io.file_exists(shots_geojson) or self.rerun():
-            # Extract geographical camera shots
-            if reconstruction.is_georeferenced():
-                # Check if alignment has been performed (we need to transform our shots if so)
-                a_matrix = None
-                if io.file_exists(tree.odm_georeferencing_alignment_matrix):
-                    with open(tree.odm_georeferencing_alignment_matrix, 'r') as f:
-                        a_matrix = np_from_json(f.read())
-                        log.INFO("Aligning shots to %s" % a_matrix)
+            shots_geojson = os.path.join(tree.odm_report, "shots.geojson")
+            if not io.file_exists(shots_geojson) or self.rerun():
+                # Extract geographical camera shots
+                if reconstruction.is_georeferenced():
+                    # Check if alignment has been performed (we need to transform our shots if so)
+                    a_matrix = None
+                    if io.file_exists(tree.odm_georeferencing_alignment_matrix):
+                        with open(tree.odm_georeferencing_alignment_matrix, 'r') as f:
+                            a_matrix = np_from_json(f.read())
+                            log.INFO("Aligning shots to %s" % a_matrix)
 
-                shots = get_geojson_shots_from_opensfm(tree.opensfm_reconstruction, utm_srs=reconstruction.get_proj_srs(), utm_offset=reconstruction.georef.utm_offset(), a_matrix=a_matrix)
+                    shots = get_geojson_shots_from_opensfm(tree.opensfm_reconstruction, utm_srs=reconstruction.get_proj_srs(), utm_offset=reconstruction.georef.utm_offset(), a_matrix=a_matrix)
+                else:
+                    # Pseudo geo
+                    shots = get_geojson_shots_from_opensfm(tree.opensfm_reconstruction, pseudo_geotiff=tree.odm_orthophoto_tif)
+
+                if shots:
+                    with open(shots_geojson, "w") as fout:
+                        fout.write(json.dumps(shots))
+
+                    log.INFO("Wrote %s" % shots_geojson)
+                else:
+                    log.WARNING("Cannot extract shots")
             else:
-                # Pseudo geo
-                shots = get_geojson_shots_from_opensfm(tree.opensfm_reconstruction, pseudo_geotiff=tree.odm_orthophoto_tif)
+                log.WARNING('Found a valid shots file in: %s' % shots_geojson)
 
-            if shots:
-                with open(shots_geojson, "w") as fout:
-                    fout.write(json.dumps(shots))
-
-                log.INFO("Wrote %s" % shots_geojson)
+        with self.step("copy_camera_mappings"):
+            camera_mappings = os.path.join(tree.odm_report, "camera_mappings.npz")
+            if not io.file_exists(camera_mappings) or self.rerun():
+                src_cm = os.path.join(tree.opensfm, "camera_mappings.npz")
+                if io.file_exists(src_cm):
+                    shutil.copy(src_cm, camera_mappings)
+                    log.INFO("Copied %s --> %s" % (src_cm, camera_mappings))
+                else:
+                    log.WARNING("Cannot copy camera mappings")
             else:
-                log.WARNING("Cannot extract shots")
-        else:
-            log.WARNING('Found a valid shots file in: %s' % shots_geojson)
-
-        camera_mappings = os.path.join(tree.odm_report, "camera_mappings.npz")
-        if not io.file_exists(camera_mappings) or self.rerun():
-            src_cm = os.path.join(tree.opensfm, "camera_mappings.npz")
-            if io.file_exists(src_cm):
-                shutil.copy(src_cm, camera_mappings)
-                log.INFO("Copied %s --> %s" % (src_cm, camera_mappings))
-            else:
-                log.WARNING("Cannot copy camera mappings")
-        else:
-            log.WARNING("Found a valid camera mappings file in: %s" % camera_mappings)
+                log.WARNING("Found a valid camera mappings file in: %s" % camera_mappings)
         
         
         if args.skip_report:
@@ -102,142 +104,145 @@ class ODMReport(types.ODM_Stage):
             log.WARNING("OpenSfM report diagrams missing; running compute_statistics")
             octx.export_stats(True, colmap=colmap_sfm)
 
-        if not os.path.exists(odm_stats_json) or self.rerun():
-            if os.path.exists(osfm_stats_json):
-                with open(osfm_stats_json, 'r') as f:
+        with self.step("generate_stats"):
+            if not os.path.exists(odm_stats_json) or self.rerun():
+                if os.path.exists(osfm_stats_json):
+                    with open(osfm_stats_json, 'r') as f:
+                        odm_stats = json.loads(f.read())
+                else:
+                    log.WARNING("Cannot generate report, OpenSfM stats are missing")
+                    odm_stats = None
+            else:
+                log.WARNING("Reading existing stats %s" % odm_stats_json)
+                with open(odm_stats_json, 'r') as f:
                     odm_stats = json.loads(f.read())
-            else:
-                log.WARNING("Cannot generate report, OpenSfM stats are missing")
-                odm_stats = None
-        else:
-            log.WARNING("Reading existing stats %s" % odm_stats_json)
-            with open(odm_stats_json, 'r') as f:
-                odm_stats = json.loads(f.read())
 
-        if odm_stats is not None:
-            if os.path.exists(tree.odm_georeferencing_model_laz):
-                point_cloud_file = tree.odm_georeferencing_model_laz
-                views_dimension = "UserData"
-                pc_info_file = os.path.join(
-                    tree.odm_georeferencing, "odm_georeferenced_model.info.json"
-                )
-                if 'point_cloud_statistics' not in odm_stats or self.rerun():
-                    odm_stats['point_cloud_statistics'] = generate_point_cloud_stats(
-                        tree.odm_georeferencing_model_laz, pc_info_file, self.rerun()
-                    )
-            else:
-                ply_pc = os.path.join(tree.odm_filterpoints, "point_cloud.ply")
-                if os.path.exists(ply_pc):
-                    point_cloud_file = ply_pc
-                    views_dimension = "views"
+            if odm_stats is not None:
+                if os.path.exists(tree.odm_georeferencing_model_laz):
+                    point_cloud_file = tree.odm_georeferencing_model_laz
+                    views_dimension = "UserData"
                     pc_info_file = os.path.join(
-                        tree.odm_filterpoints, "point_cloud.info.json"
+                        tree.odm_georeferencing, "odm_georeferenced_model.info.json"
                     )
                     if 'point_cloud_statistics' not in odm_stats or self.rerun():
                         odm_stats['point_cloud_statistics'] = generate_point_cloud_stats(
-                            ply_pc, pc_info_file, self.rerun()
+                            tree.odm_georeferencing_model_laz, pc_info_file, self.rerun()
                         )
                 else:
-                    log.WARNING("No point cloud found")
+                    ply_pc = os.path.join(tree.odm_filterpoints, "point_cloud.ply")
+                    if os.path.exists(ply_pc):
+                        point_cloud_file = ply_pc
+                        views_dimension = "views"
+                        pc_info_file = os.path.join(
+                            tree.odm_filterpoints, "point_cloud.info.json"
+                        )
+                        if 'point_cloud_statistics' not in odm_stats or self.rerun():
+                            odm_stats['point_cloud_statistics'] = generate_point_cloud_stats(
+                                ply_pc, pc_info_file, self.rerun()
+                            )
+                    else:
+                        log.WARNING("No point cloud found")
 
-            if 'point_cloud_statistics' in odm_stats:
-                odm_stats['point_cloud_statistics']['dense'] = not args.fast_orthophoto
+                if 'point_cloud_statistics' in odm_stats:
+                    odm_stats['point_cloud_statistics']['dense'] = not args.fast_orthophoto
 
-            total_time = (system.now_raw() - outputs['start_time']).total_seconds()
-            odm_stats['odm_processing_statistics'] = {
-                'total_time': total_time,
-                'total_time_human': hms(total_time),
-                'average_gsd': gsd.opensfm_reconstruction_average_gsd(
-                    octx.recon_file(), use_all_shots=reconstruction.has_gcp()
-                ),
-            }
+                total_time = (system.now_raw() - outputs['start_time']).total_seconds()
+                odm_stats['odm_processing_statistics'] = {
+                    'total_time': total_time,
+                    'total_time_human': hms(total_time),
+                    'average_gsd': gsd.opensfm_reconstruction_average_gsd(
+                        octx.recon_file(), use_all_shots=reconstruction.has_gcp()
+                    ),
+                }
 
-            if os.path.exists(codem_stats_json):
-                with open(codem_stats_json, 'r') as f:
-                    odm_stats['align'] = json.loads(f.read())
+                if os.path.exists(codem_stats_json):
+                    with open(codem_stats_json, 'r') as f:
+                        odm_stats['align'] = json.loads(f.read())
 
-            with open(odm_stats_json, 'w') as f:
-                f.write(json.dumps(odm_stats))
+                with open(odm_stats_json, 'w') as f:
+                    f.write(json.dumps(odm_stats))
 
         # Generate overlap diagram
-        if odm_stats is not None and odm_stats.get('point_cloud_statistics') and point_cloud_file and views_dimension:
-            bounds = odm_stats['point_cloud_statistics'].get('stats', {}).get('bbox', {}).get('native', {}).get('bbox')
-            if bounds:
-                image_target_size = 1400 # pixels
-                osfm_stats_dir = os.path.join(tree.opensfm, "stats")
-                diagram_tiff = os.path.join(osfm_stats_dir, "overlap.tif")
-                diagram_png = os.path.join(osfm_stats_dir, "overlap.png")
+        with self.step("generate_overlap_diagram"):
+            if odm_stats is not None and odm_stats.get('point_cloud_statistics') and point_cloud_file and views_dimension:
+                bounds = odm_stats['point_cloud_statistics'].get('stats', {}).get('bbox', {}).get('native', {}).get('bbox')
+                if bounds:
+                    image_target_size = 1400 # pixels
+                    osfm_stats_dir = os.path.join(tree.opensfm, "stats")
+                    diagram_tiff = os.path.join(osfm_stats_dir, "overlap.tif")
+                    diagram_png = os.path.join(osfm_stats_dir, "overlap.png")
 
-                width = bounds.get('maxx') - bounds.get('minx')
-                height = bounds.get('maxy') - bounds.get('miny')
-                max_dim = max(width, height)
-                resolution = float(max_dim) / float(image_target_size)
-                radius = resolution * math.sqrt(2)
+                    width = bounds.get('maxx') - bounds.get('minx')
+                    height = bounds.get('maxy') - bounds.get('miny')
+                    max_dim = max(width, height)
+                    resolution = float(max_dim) / float(image_target_size)
+                    radius = resolution * math.sqrt(2)
 
-                # Larger radius for sparse point cloud diagram
-                if not odm_stats['point_cloud_statistics']['dense']:
-                    radius *= 10
+                    # Larger radius for sparse point cloud diagram
+                    if not odm_stats['point_cloud_statistics']['dense']:
+                        radius *= 10
 
-                system.run("pdal translate -i \"{}\" "
-                            "-o \"{}\" "
-                            "--writer gdal "
-                            "--writers.gdal.resolution={} "
-                            "--writers.gdal.data_type=uint8_t "
-                            "--writers.gdal.dimension={} "
-                            "--writers.gdal.output_type=max "
-                            "--writers.gdal.radius={} ".format(point_cloud_file, diagram_tiff, 
-                                                                    resolution, views_dimension, radius))
-                report_assets = os.path.abspath(os.path.join(os.path.dirname(__file__), "../opendm/report"))
-                overlap_color_map = os.path.join(report_assets, "overlap_color_map.txt")
+                    system.run("pdal translate -i \"{}\" "
+                                "-o \"{}\" "
+                                "--writer gdal "
+                                "--writers.gdal.resolution={} "
+                                "--writers.gdal.data_type=uint8_t "
+                                "--writers.gdal.dimension={} "
+                                "--writers.gdal.output_type=max "
+                                "--writers.gdal.radius={} ".format(point_cloud_file, diagram_tiff, 
+                                                                        resolution, views_dimension, radius))
+                    report_assets = os.path.abspath(os.path.join(os.path.dirname(__file__), "../opendm/report"))
+                    overlap_color_map = os.path.join(report_assets, "overlap_color_map.txt")
 
-                bounds_file_path = os.path.join(tree.odm_georeferencing, 'odm_georeferenced_model.bounds.gpkg')
-                if (args.crop > 0 or args.boundary) and os.path.isfile(bounds_file_path):
-                    Cropper.crop(bounds_file_path, diagram_tiff, get_orthophoto_vars(args), keep_original=False)
+                    bounds_file_path = os.path.join(tree.odm_georeferencing, 'odm_georeferenced_model.bounds.gpkg')
+                    if (args.crop > 0 or args.boundary) and os.path.isfile(bounds_file_path):
+                        Cropper.crop(bounds_file_path, diagram_tiff, get_orthophoto_vars(args), keep_original=False)
 
-                system.run("gdaldem color-relief \"{}\" \"{}\" \"{}\" -of PNG -alpha".format(diagram_tiff, overlap_color_map, diagram_png))
+                    system.run("gdaldem color-relief \"{}\" \"{}\" \"{}\" -of PNG -alpha".format(diagram_tiff, overlap_color_map, diagram_png))
 
-                # Copy assets
-                for asset in ["overlap_diagram_legend.png", "dsm_gradient.png"]:
-                    shutil.copy(os.path.join(report_assets, asset), os.path.join(osfm_stats_dir, asset))
+                    # Copy assets
+                    for asset in ["overlap_diagram_legend.png", "dsm_gradient.png"]:
+                        shutil.copy(os.path.join(report_assets, asset), os.path.join(osfm_stats_dir, asset))
 
-                # Generate previews of ortho/dsm
-                if os.path.isfile(tree.odm_orthophoto_tif):
-                    osfm_ortho = os.path.join(osfm_stats_dir, "ortho.png")
-                    generate_png(tree.odm_orthophoto_tif, osfm_ortho, image_target_size)
-                
-                dems = []
-                if args.dsm:
-                    dems.append("dsm")
-                if args.dtm:
-                    dems.append("dtm")
+                    # Generate previews of ortho/dsm
+                    if os.path.isfile(tree.odm_orthophoto_tif):
+                        osfm_ortho = os.path.join(osfm_stats_dir, "ortho.png")
+                        generate_png(tree.odm_orthophoto_tif, osfm_ortho, image_target_size)
+                    
+                    dems = []
+                    if args.dsm:
+                        dems.append("dsm")
+                    if args.dtm:
+                        dems.append("dtm")
 
-                for dem in dems:
-                    dem_file = tree.path("odm_dem", "%s.tif" % dem)
-                    if os.path.isfile(dem_file):
-                        # Resize first (faster)
-                        resized_dem_file = io.related_file_path(dem_file, postfix=".preview")
-                        system.run("gdal_translate -outsize {} 0 \"{}\" \"{}\" --config GDAL_CACHEMAX {}%".format(image_target_size, dem_file, resized_dem_file, get_max_memory()))
+                    for dem in dems:
+                        dem_file = tree.path("odm_dem", "%s.tif" % dem)
+                        if os.path.isfile(dem_file):
+                            # Resize first (faster)
+                            resized_dem_file = io.related_file_path(dem_file, postfix=".preview")
+                            system.run("gdal_translate -outsize {} 0 \"{}\" \"{}\" --config GDAL_CACHEMAX {}%".format(image_target_size, dem_file, resized_dem_file, get_max_memory()))
 
-                        log.INFO("Computing raster stats for %s" % resized_dem_file)
-                        dem_stats = get_raster_stats(resized_dem_file)
-                        if len(dem_stats) > 0:
-                            odm_stats[dem + '_statistics'] = dem_stats[0]
+                            log.INFO("Computing raster stats for %s" % resized_dem_file)
+                            dem_stats = get_raster_stats(resized_dem_file)
+                            if len(dem_stats) > 0:
+                                odm_stats[dem + '_statistics'] = dem_stats[0]
 
-                        osfm_dem = os.path.join(osfm_stats_dir, "%s.png" % dem)
-                        colored_dem, hillshade_dem, colored_hillshade_dem = generate_colored_hillshade(resized_dem_file)
-                        system.run("gdal_translate -outsize {} 0 -of png \"{}\" \"{}\" --config GDAL_CACHEMAX {}%".format(image_target_size, colored_hillshade_dem, osfm_dem, get_max_memory()))
-                        for f in [resized_dem_file, colored_dem, hillshade_dem, colored_hillshade_dem]:
-                            if os.path.isfile(f):
-                                os.remove(f)
+                            osfm_dem = os.path.join(osfm_stats_dir, "%s.png" % dem)
+                            colored_dem, hillshade_dem, colored_hillshade_dem = generate_colored_hillshade(resized_dem_file)
+                            system.run("gdal_translate -outsize {} 0 -of png \"{}\" \"{}\" --config GDAL_CACHEMAX {}%".format(image_target_size, colored_hillshade_dem, osfm_dem, get_max_memory()))
+                            for f in [resized_dem_file, colored_dem, hillshade_dem, colored_hillshade_dem]:
+                                if os.path.isfile(f):
+                                    os.remove(f)
+                else:
+                    log.WARNING("Cannot generate overlap diagram, cannot compute point cloud bounds")
             else:
-                log.WARNING("Cannot generate overlap diagram, cannot compute point cloud bounds")
-        else:
-            log.WARNING("Cannot generate overlap diagram, point cloud stats missing")
+                log.WARNING("Cannot generate overlap diagram, point cloud stats missing")
 
         if odm_stats is not None:
-            octx.export_report(
-                os.path.join(tree.odm_report, "report.pdf"),
-                odm_stats,
-                self.rerun(),
-                colmap=colmap_sfm,
-            )
+            with self.step("export_report"):
+                octx.export_report(
+                    os.path.join(tree.odm_report, "report.pdf"),
+                    odm_stats,
+                    self.rerun(),
+                    colmap=colmap_sfm,
+                )

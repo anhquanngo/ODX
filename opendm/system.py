@@ -8,6 +8,8 @@ import string
 import signal
 import io
 import shutil
+import threading
+import time
 from collections import deque
 
 from opendm import context
@@ -66,7 +68,7 @@ def sighandler(signum, frame):
 signal.signal(signal.SIGINT, sighandler)
 signal.signal(signal.SIGTERM, sighandler)
 
-def run(cmd, env_paths=[context.superbuild_bin_path], env_vars={}, packages_paths=context.python_packages_paths, quiet=False):
+def run(cmd, env_paths=[context.superbuild_bin_path], env_vars={}, packages_paths=context.python_packages_paths, quiet=False, heartbeat_interval=30, heartbeat_label=None):
     """Run a system command"""
     global running_subprocesses
 
@@ -93,12 +95,35 @@ def run(cmd, env_paths=[context.superbuild_bin_path], env_vars={}, packages_path
     p = subprocess.Popen(cmd, shell=True, env=env, start_new_session=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     running_subprocesses.append(p)
     lines = deque()
-    for line in io.TextIOWrapper(p.stdout):
-        print(line, end="")
+    start_time = time.monotonic()
+    stop_heartbeat = threading.Event()
+    hb_label = heartbeat_label
+    if hb_label is None and not quiet:
+        hb_label = cmd if len(cmd) <= 80 else (cmd[:77] + '...')
 
-        lines.append(line.strip())
-        if len(lines) == 11:
-            lines.popleft()
+    def heartbeat_worker():
+        while not stop_heartbeat.wait(heartbeat_interval):
+            if p.poll() is not None:
+                return
+            elapsed = int(time.monotonic() - start_time)
+            log.INFO('Still running (%ss): %s' % (elapsed, hb_label))
+
+    hb_thread = None
+    if heartbeat_interval and heartbeat_interval > 0 and not quiet and hb_label:
+        hb_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+        hb_thread.start()
+
+    try:
+        for line in io.TextIOWrapper(p.stdout):
+            print(line, end="")
+
+            lines.append(line.strip())
+            if len(lines) == 11:
+                lines.popleft()
+    finally:
+        stop_heartbeat.set()
+        if hb_thread is not None:
+            hb_thread.join(timeout=1.0)
 
     retcode = p.wait()
 

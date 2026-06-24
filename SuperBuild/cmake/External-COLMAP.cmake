@@ -1,26 +1,24 @@
 set(_proj_name colmap)
 set(_SB_BINARY_DIR "${SB_BINARY_DIR}/${_proj_name}")
 
+include(${CMAKE_CURRENT_LIST_DIR}/ODXCuda.cmake)
+
 set(GPU_CMAKE_ARGS "")
-if(UNIX AND NOT APPLE)
-    if(EXISTS "/usr/local/cuda/lib64/stubs")
-        set(GPU_CMAKE_ARGS -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs)
-    endif()
+if(UNIX AND NOT APPLE AND ODX_CUDA_STUB_DIR)
+    set(GPU_CMAKE_ARGS -DCMAKE_LIBRARY_PATH=${ODX_CUDA_STUB_DIR})
 endif()
 
 if(ODX_GPU_BUILD)
     # 3.11+ provides Mapper.ba_use_gpu (needs Ceres built with CUDA/cuDSS).
     set(COLMAP_GIT_TAG 3.11.1)
     set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
-    if(NOT WIN32 AND NOT APPLE)
-        if(EXISTS "/usr/local/cuda/bin/nvcc")
-            set(COLMAP_CUDA_ARGS
-                -DCUDA_ENABLED=ON
-                "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
-                # Common datacenter / consumer NVIDIA archs (SiftGPU + Ceres CUDA).
-                "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
-            )
-        endif()
+    if(NOT WIN32 AND NOT APPLE AND ODX_NVCC)
+        set(COLMAP_CUDA_ARGS
+            -DCUDA_ENABLED=ON
+            "-DCMAKE_CUDA_COMPILER=${ODX_NVCC}"
+            # Common datacenter / consumer NVIDIA archs (SiftGPU + Ceres CUDA).
+            "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
+        )
     endif()
     message(STATUS "COLMAP: GPU pipeline tag ${COLMAP_GIT_TAG}")
     list(APPEND COLMAP_CUDA_ARGS "-DCMAKE_PREFIX_PATH=${SB_INSTALL_DIR}")
@@ -28,14 +26,12 @@ else()
     # CPU image: stay on 3.9.1 (no PoseLib FetchContent churn).
     set(COLMAP_GIT_TAG 3.9.1)
     set(COLMAP_CUDA_ARGS -DCUDA_ENABLED=OFF)
-    if(NOT WIN32 AND NOT APPLE)
-        if(EXISTS "/usr/local/cuda/bin/nvcc")
-            set(COLMAP_CUDA_ARGS
-                -DCUDA_ENABLED=ON
-                "-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc"
-                "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
-            )
-        endif()
+    if(NOT WIN32 AND NOT APPLE AND ODX_NVCC)
+        set(COLMAP_CUDA_ARGS
+            -DCUDA_ENABLED=ON
+            "-DCMAKE_CUDA_COMPILER=${ODX_NVCC}"
+            "-DCMAKE_CUDA_ARCHITECTURES=75;80;86;89"
+        )
     endif()
     message(STATUS "COLMAP: CPU pipeline tag ${COLMAP_GIT_TAG}")
 endif()

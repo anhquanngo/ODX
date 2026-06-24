@@ -103,199 +103,187 @@ class ODMLoadDatasetStage(types.ODM_Stage):
         # check if we rerun cell or not
         images_database_file = os.path.join(tree.root_path, 'images.json')
         if not io.file_exists(images_database_file) or self.rerun():
-            if not os.path.exists(images_dir):
-                raise system.ExitException("There are no images in %s! Make sure that your project path and dataset name is correct. The current is set to: %s" % (images_dir, args.project_path))
+            with self.step("load_images"):
+                if not os.path.exists(images_dir):
+                    raise system.ExitException("There are no images in %s! Make sure that your project path and dataset name is correct. The current is set to: %s" % (images_dir, args.project_path))
 
-            # Check if we need to extract video frames
-            frames_db_file = os.path.join(images_dir, 'frames.json')
-            if not os.path.exists(frames_db_file) or self.rerun():
-                video_files = search_video_files(images_dir)
+                # Check if we need to extract video frames
+                frames_db_file = os.path.join(images_dir, 'frames.json')
+                if not os.path.exists(frames_db_file) or self.rerun():
+                    video_files = search_video_files(images_dir)
 
-                # If we're re-running the pipeline, and frames have been extracted during a previous run
-                # we need to remove those before re-extracting them
-                if len(video_files) > 0 and os.path.exists(frames_db_file) and self.rerun():
-                    log.INFO("Re-run, removing previously extracted video frames")
-                    frames = []
-                    try:
-                        with open(frames_db_file, 'r') as f:
-                            frames = json.loads(f.read())
-                    except Exception as e:
-                        log.WARNING("Cannot check previous video extraction: %s" % str(e))
-
-                    for f in frames:
-                        fp = os.path.join(images_dir, f)
-                        if os.path.isfile(fp):
-                            os.remove(fp)
-                
-                if len(video_files) > 0:
-                    log.INFO("Found video files (%s), extracting frames" % len(video_files))
-
-                    try:
-                        params = Parameters({
-                            "input": video_files,
-                            "output": images_dir,
-                            
-                            "blur_threshold": 200,
-                            "distance_threshold": 10, 
-                            "black_ratio_threshold": 0.98,
-                            "pixel_black_threshold": 0.30,
-                            "use_srt": True,
-                            "max_dimension": args.video_resolution,
-                            "limit": args.video_limit,
-                        })
-                        v2d = Video2Dataset(params)
-                        frames = v2d.ProcessVideo()
-
-                        with open(frames_db_file, 'w') as f:
-                            f.write(json.dumps([os.path.basename(f) for f in frames]))
-                    except Exception as e:
-                        log.WARNING("Could not extract video frames: %s" % str(e))
-
-            files, rejects = get_images(images_dir)
-            if files:
-                # create ODMPhoto list
-                path_files = [os.path.join(images_dir, f) for f in files]
-
-                # Lookup table for masks
-                masks = {}
-                for r in rejects:
-                    (p, ext) = os.path.splitext(r)
-                    if p[-5:] == "_mask" and ext.lower() in context.supported_extensions:
-                        masks[p] = r
-                    
-                photos = []
-                with open(tree.dataset_list, 'w') as dataset_list:
-                    log.INFO("Loading %s images" % len(path_files))
-                    for f in path_files:
+                    # If we're re-running the pipeline, and frames have been extracted during a previous run
+                    # we need to remove those before re-extracting them
+                    if len(video_files) > 0 and os.path.exists(frames_db_file) and self.rerun():
+                        log.INFO("Re-run, removing previously extracted video frames")
+                        frames = []
                         try:
-                            p = types.ODM_Photo(f)
-                            p.set_mask(find_mask(f, masks))
-                            photos.append(p)
-                            dataset_list.write(photos[-1].filename + '\n')
-                        except PhotoCorruptedException:
-                            log.WARNING("%s seems corrupted and will not be used" % os.path.basename(f))
+                            with open(frames_db_file, 'r') as f:
+                                frames = json.loads(f.read())
+                        except Exception as e:
+                            log.WARNING("Cannot check previous video extraction: %s" % str(e))
 
-                # Check if a geo file is available
-                if tree.odm_geo_file is not None and os.path.isfile(tree.odm_geo_file):
-                    log.INFO("Found image geolocation file")
-                    gf = GeoFile(tree.odm_geo_file)
-                    updated = 0
-                    for p in photos:
-                        entry = gf.get_entry(p.filename)
-                        if entry:
-                            p.update_with_geo_entry(entry)
-                            p.compute_opk()
-                            updated += 1
-                    log.INFO("Updated %s image positions" % updated)
-                # Warn if a file path is specified but it does not exist
-                elif tree.odm_geo_file is not None and not os.path.isfile(tree.odm_geo_file):
-                    log.WARNING("Image geolocation file %s does not exist" % tree.odm_geo_file) 
-
-                # GPSDOP override if we have GPS accuracy information (such as RTK)
-                if 'gps_accuracy_is_set' in args:
-                    log.INFO("Forcing GPS DOP to %s for all images" % args.gps_accuracy)
-
-                    for p in photos:
-                        p.override_gps_dop(args.gps_accuracy)
-                
-                # Override projection type
-                if args.camera_lens != "auto":
-                    log.INFO("Setting camera lens to %s for all images" % args.camera_lens)
-
-                    for p in photos:
-                        p.override_camera_projection(args.camera_lens)
-
-                # Automatic sky removal
-                if args.sky_removal:
-                    # For each image that :
-                    #  - Doesn't already have a mask, AND
-                    #  - Is not nadir (or if orientation info is missing, or if camera lens is fisheye), AND
-                    #  - There are no spaces in the image filename (OpenSfM requirement)
-                    # Automatically generate a sky mask
+                        for f in frames:
+                            fp = os.path.join(images_dir, f)
+                            if os.path.isfile(fp):
+                                os.remove(fp)
                     
-                    # Generate list of sky images
-                    sky_images = []
-                    for p in photos:
-                        if p.mask is None and (args.camera_lens in ['fisheye', 'spherical'] or p.pitch is None or (abs(p.pitch) > 20)) and (not " " in p.filename):
-                            sky_images.append({'file': os.path.join(images_dir, p.filename), 'p': p})
+                    if len(video_files) > 0:
+                        log.INFO("Found video files (%s), extracting frames" % len(video_files))
 
-                    if len(sky_images) > 0:
-                        log.INFO("Automatically generating sky masks for %s images" % len(sky_images))
-                        model = ai.get_model("skyremoval", "https://github.com/WebODM/ODX/releases/download/v3.7.1/skyremoval.zip", "v1.0.5")
-                        if model is not None:
-                            sf = SkyFilter(model=model)
+                        try:
+                            params = Parameters({
+                                "input": video_files,
+                                "output": images_dir,
+                                
+                                "blur_threshold": 200,
+                                "distance_threshold": 10, 
+                                "black_ratio_threshold": 0.98,
+                                "pixel_black_threshold": 0.30,
+                                "use_srt": True,
+                                "max_dimension": args.video_resolution,
+                                "limit": args.video_limit,
+                            })
+                            v2d = Video2Dataset(params)
+                            frames = v2d.ProcessVideo()
 
-                            def parallel_sky_filter(item):
-                                try:
-                                    mask_file = sf.run_img(item['file'], images_dir)
+                            with open(frames_db_file, 'w') as f:
+                                f.write(json.dumps([os.path.basename(f) for f in frames]))
+                        except Exception as e:
+                            log.WARNING("Could not extract video frames: %s" % str(e))
 
-                                    # Check and set
-                                    if mask_file is not None and os.path.isfile(mask_file):
-                                        item['p'].set_mask(os.path.basename(mask_file))
-                                        log.INFO("Wrote %s" % os.path.basename(mask_file))
-                                    else:
-                                        log.WARNING("Cannot generate mask for %s" % item['file'])
-                                except Exception as e:
-                                    log.WARNING("Cannot generate mask for %s: %s" % (item['file'], str(e)))
+                files, rejects = get_images(images_dir)
+                if files:
+                    # create ODMPhoto list
+                    path_files = [os.path.join(images_dir, f) for f in files]
 
-                            parallel_map(parallel_sky_filter, sky_images, max_workers=args.max_concurrency)
+                    # Lookup table for masks
+                    masks = {}
+                    for r in rejects:
+                        (p, ext) = os.path.splitext(r)
+                        if p[-5:] == "_mask" and ext.lower() in context.supported_extensions:
+                            masks[p] = r
+                        
+                    photos = []
+                    with open(tree.dataset_list, 'w') as dataset_list:
+                        log.INFO("Loading %s images" % len(path_files))
+                        for f in path_files:
+                            try:
+                                p = types.ODM_Photo(f)
+                                p.set_mask(find_mask(f, masks))
+                                photos.append(p)
+                                dataset_list.write(photos[-1].filename + '\n')
+                            except PhotoCorruptedException:
+                                log.WARNING("%s seems corrupted and will not be used" % os.path.basename(f))
 
-                            log.INFO("Sky masks generation completed!")
-                        else:
-                            log.WARNING("Cannot load AI model (you might need to be connected to the internet?)")
-                    else:
-                        log.INFO("No sky masks will be generated (masks already provided, or images are nadir)")
+                    # Check if a geo file is available
+                    if tree.odm_geo_file is not None and os.path.isfile(tree.odm_geo_file):
+                        log.INFO("Found image geolocation file")
+                        gf = GeoFile(tree.odm_geo_file)
+                        updated = 0
+                        for p in photos:
+                            entry = gf.get_entry(p.filename)
+                            if entry:
+                                p.update_with_geo_entry(entry)
+                                p.compute_opk()
+                                updated += 1
+                        log.INFO("Updated %s image positions" % updated)
+                    # Warn if a file path is specified but it does not exist
+                    elif tree.odm_geo_file is not None and not os.path.isfile(tree.odm_geo_file):
+                        log.WARNING("Image geolocation file %s does not exist" % tree.odm_geo_file) 
 
-                # End sky removal
+                    # GPSDOP override if we have GPS accuracy information (such as RTK)
+                    if 'gps_accuracy_is_set' in args:
+                        log.INFO("Forcing GPS DOP to %s for all images" % args.gps_accuracy)
 
-                # Automatic background removal
-                if args.bg_removal:
-                    # For each image that :
-                    #  - Doesn't already have a mask, AND
-                    #  - There are no spaces in the image filename (OpenSfM requirement)
+                        for p in photos:
+                            p.override_gps_dop(args.gps_accuracy)
                     
-                    # Generate list of sky images
-                    bg_images = []
-                    for p in photos:
-                        if p.mask is None and (not " " in p.filename):
-                            bg_images.append({'file': os.path.join(images_dir, p.filename), 'p': p})
+                    # Override projection type
+                    if args.camera_lens != "auto":
+                        log.INFO("Setting camera lens to %s for all images" % args.camera_lens)
 
-                    if len(bg_images) > 0:
-                        log.INFO("Automatically generating background masks for %s images" % len(bg_images))
-                        model = ai.get_model("bgremoval", "https://github.com/WebODM/ODX/releases/download/v3.7.1/u2net.zip", "v2.9.0")
-                        if model is not None:
-                            bg = BgFilter(model=model)
+                        for p in photos:
+                            p.override_camera_projection(args.camera_lens)
 
-                            def parallel_bg_filter(item):
-                                try:
-                                    mask_file = bg.run_img(item['file'], images_dir)
+                    # Automatic sky removal
+                    if args.sky_removal:
+                        with self.step("sky_removal"):
+                            # Generate list of sky images
+                            sky_images = []
+                            for p in photos:
+                                if p.mask is None and (args.camera_lens in ['fisheye', 'spherical'] or p.pitch is None or (abs(p.pitch) > 20)) and (not " " in p.filename):
+                                    sky_images.append({'file': os.path.join(images_dir, p.filename), 'p': p})
 
-                                    # Check and set
-                                    if mask_file is not None and os.path.isfile(mask_file):
-                                        item['p'].set_mask(os.path.basename(mask_file))
-                                        log.INFO("Wrote %s" % os.path.basename(mask_file))
-                                    else:
-                                        log.WARNING("Cannot generate mask for %s" % img)
-                                except Exception as e:
-                                    log.WARNING("Cannot generate mask for %s: %s" % (img, str(e)))
+                            if len(sky_images) > 0:
+                                log.INFO("Automatically generating sky masks for %s images" % len(sky_images))
+                                model = ai.get_model("skyremoval", "https://github.com/WebODM/ODX/releases/download/v3.7.1/skyremoval.zip", "v1.0.5")
+                                if model is not None:
+                                    sf = SkyFilter(model=model)
 
-                            parallel_map(parallel_bg_filter, bg_images, max_workers=args.max_concurrency)
+                                    def parallel_sky_filter(item):
+                                        try:
+                                            mask_file = sf.run_img(item['file'], images_dir)
 
-                            log.INFO("Background masks generation completed!")
-                        else:
-                            log.WARNING("Cannot load AI model (you might need to be connected to the internet?)")
-                    else:
-                        log.INFO("No background masks will be generated (masks already provided)")
+                                            # Check and set
+                                            if mask_file is not None and os.path.isfile(mask_file):
+                                                item['p'].set_mask(os.path.basename(mask_file))
+                                                log.INFO("Wrote %s" % os.path.basename(mask_file))
+                                            else:
+                                                log.WARNING("Cannot generate mask for %s" % item['file'])
+                                        except Exception as e:
+                                            log.WARNING("Cannot generate mask for %s: %s" % (item['file'], str(e)))
 
-                # End bg removal
+                                    parallel_map(parallel_sky_filter, sky_images, max_workers=args.max_concurrency)
 
-                # Save image database for faster restart
-                save_images_database(photos, images_database_file)
-            else:
-                raise system.ExitException('Not enough supported images in %s' % images_dir)
+                                    log.INFO("Sky masks generation completed!")
+                                else:
+                                    log.WARNING("Cannot load AI model (you might need to be connected to the internet?)")
+                            else:
+                                log.INFO("No sky masks will be generated (masks already provided, or images are nadir)")
+
+                    # Automatic background removal
+                    if args.bg_removal:
+                        with self.step("bg_removal"):
+                            bg_images = []
+                            for p in photos:
+                                if p.mask is None and (not " " in p.filename):
+                                    bg_images.append({'file': os.path.join(images_dir, p.filename), 'p': p})
+
+                            if len(bg_images) > 0:
+                                log.INFO("Automatically generating background masks for %s images" % len(bg_images))
+                                model = ai.get_model("bgremoval", "https://github.com/WebODM/ODX/releases/download/v3.7.1/u2net.zip", "v2.9.0")
+                                if model is not None:
+                                    bg = BgFilter(model=model)
+
+                                    def parallel_bg_filter(item):
+                                        try:
+                                            mask_file = bg.run_img(item['file'], images_dir)
+
+                                            # Check and set
+                                            if mask_file is not None and os.path.isfile(mask_file):
+                                                item['p'].set_mask(os.path.basename(mask_file))
+                                                log.INFO("Wrote %s" % os.path.basename(mask_file))
+                                            else:
+                                                log.WARNING("Cannot generate mask for %s" % img)
+                                        except Exception as e:
+                                            log.WARNING("Cannot generate mask for %s: %s" % (img, str(e)))
+
+                                    parallel_map(parallel_bg_filter, bg_images, max_workers=args.max_concurrency)
+
+                                    log.INFO("Background masks generation completed!")
+                                else:
+                                    log.WARNING("Cannot load AI model (you might need to be connected to the internet?)")
+                            else:
+                                log.INFO("No background masks will be generated (masks already provided)")
+
+                    # Save image database for faster restart
+                    save_images_database(photos, images_database_file)
+                else:
+                    raise system.ExitException('Not enough supported images in %s' % images_dir)
         else:
-            # We have an images database, just load it
-            photos = load_images_database(images_database_file)
+            with self.step("load_images_from_cache"):
+                photos = load_images_database(images_database_file)
 
         log.INFO('Found %s usable images' % len(photos))
         log.logger.log_json_images(len(photos))
@@ -303,20 +291,21 @@ class ODMLoadDatasetStage(types.ODM_Stage):
         # Create reconstruction object
         reconstruction = types.ODM_Reconstruction(photos)
         
-        if tree.odm_georeferencing_gcp and not args.use_exif:
-            reconstruction.georeference_with_gcp(tree.odm_georeferencing_gcp,
-                                                 tree.odm_georeferencing_coords,
-                                                 tree.odm_georeferencing_gcp_utm,
-                                                 tree.odm_georeferencing_model_txt_geo,
-                                                 rerun=self.rerun())
-            if reconstruction.gcp is not None and reconstruction.gcp.only_checkpoints():
-                    log.WARNING("Only checkpoints in this GCP file. Enabling --force-gps")
-                    args.force_gps = True
-        else:
-            reconstruction.georeference_with_gps(tree.dataset_raw, 
-                                                 tree.odm_georeferencing_coords, 
-                                                 tree.odm_georeferencing_model_txt_geo,
-                                                 rerun=self.rerun())
+        with self.step("georeference"):
+            if tree.odm_georeferencing_gcp and not args.use_exif:
+                reconstruction.georeference_with_gcp(tree.odm_georeferencing_gcp,
+                                                     tree.odm_georeferencing_coords,
+                                                     tree.odm_georeferencing_gcp_utm,
+                                                     tree.odm_georeferencing_model_txt_geo,
+                                                     rerun=self.rerun())
+                if reconstruction.gcp is not None and reconstruction.gcp.only_checkpoints():
+                        log.WARNING("Only checkpoints in this GCP file. Enabling --force-gps")
+                        args.force_gps = True
+            else:
+                reconstruction.georeference_with_gps(tree.dataset_raw, 
+                                                     tree.odm_georeferencing_coords, 
+                                                     tree.odm_georeferencing_model_txt_geo,
+                                                     rerun=self.rerun())
         
         reconstruction.save_proj_srs(os.path.join(tree.odm_georeferencing, tree.odm_georeferencing_proj))
         outputs['reconstruction'] = reconstruction

@@ -20,15 +20,16 @@ class ODMeshingStage(types.ODM_Stage):
         # Create full 3D model unless --skip-3dmodel is set
         if not args.skip_3dmodel:
           if not io.file_exists(tree.odm_mesh) or self.rerun():
-              log.INFO('Writing mesh file in: %s' % tree.odm_mesh)
+              with self.step("mesh_3d"):
+                  log.INFO('Writing mesh file in: %s' % tree.odm_mesh)
 
-              mesh.screened_poisson_reconstruction(tree.filtered_point_cloud,
-                tree.odm_mesh,
-                depth=self.params.get('oct_tree'),
-                samples=self.params.get('samples'),
-                maxVertexCount=self.params.get('max_vertex'),
-                pointWeight=self.params.get('point_weight'),
-                threads=max(1, self.params.get('max_concurrency') - 1)), # poissonrecon can get stuck on some machines if --threads == all cores
+                  mesh.screened_poisson_reconstruction(tree.filtered_point_cloud,
+                    tree.odm_mesh,
+                    depth=self.params.get('oct_tree'),
+                    samples=self.params.get('samples'),
+                    maxVertexCount=self.params.get('max_vertex'),
+                    pointWeight=self.params.get('point_weight'),
+                    threads=max(1, self.params.get('max_concurrency') - 1)), # poissonrecon can get stuck on some machines if --threads == all cores
           else:
               log.WARNING('Found a valid mesh file in: %s' %
                               tree.odm_mesh)
@@ -40,27 +41,28 @@ class ODMeshingStage(types.ODM_Stage):
         if not args.use_3dmesh:
           if not io.file_exists(tree.odm_25dmesh) or self.rerun():
 
-              log.INFO('Writing 2.5D mesh file in: %s' % tree.odm_25dmesh)
+              with self.step("mesh_25d"):
+                  log.INFO('Writing 2.5D mesh file in: %s' % tree.odm_25dmesh)
 
-              multiplier = math.pi / 2.0
-              radius_steps = commands.get_dem_radius_steps(tree.filtered_point_cloud_stats, 3, args.orthophoto_resolution, multiplier=multiplier)
-              dsm_resolution = radius_steps[0] / multiplier
+                  multiplier = math.pi / 2.0
+                  radius_steps = commands.get_dem_radius_steps(tree.filtered_point_cloud_stats, 3, args.orthophoto_resolution, multiplier=multiplier)
+                  dsm_resolution = radius_steps[0] / multiplier
 
-              log.INFO('2.5D DSM resolution: %s' % dsm_resolution)
-              
-              if args.fast_orthophoto:
-                  dsm_resolution *= 8.0
+                  log.INFO('2.5D DSM resolution: %s' % dsm_resolution)
+                  
+                  if args.fast_orthophoto:
+                      dsm_resolution *= 8.0
 
-              mesh.create_25dmesh(tree.filtered_point_cloud, tree.odm_25dmesh,
-                    radius_steps,
-                    dsm_resolution=dsm_resolution, 
-                    depth=self.params.get('oct_tree'),
-                    maxVertexCount=self.params.get('max_vertex'),
-                    samples=self.params.get('samples'),
-                    available_cores=args.max_concurrency,
-                    method='poisson' if args.fast_orthophoto else 'gridded',
-                    smooth_dsm=True,
-                    max_tiles=None if reconstruction.has_geotagged_photos() else math.ceil(len(reconstruction.photos) / 2))
+                  mesh.create_25dmesh(tree.filtered_point_cloud, tree.odm_25dmesh,
+                        radius_steps,
+                        dsm_resolution=dsm_resolution, 
+                        depth=self.params.get('oct_tree'),
+                        maxVertexCount=self.params.get('max_vertex'),
+                        samples=self.params.get('samples'),
+                        available_cores=args.max_concurrency,
+                        method='poisson' if args.fast_orthophoto else 'gridded',
+                        smooth_dsm=True,
+                        max_tiles=None if reconstruction.has_geotagged_photos() else math.ceil(len(reconstruction.photos) / 2))
           else:
               log.WARNING('Found a valid 2.5D mesh file in: %s' %
                               tree.odm_25dmesh)

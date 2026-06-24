@@ -65,37 +65,38 @@ class ODMDEMStage(types.ODM_Stage):
                 radius_steps = commands.get_dem_radius_steps(tree.filtered_point_cloud_stats, args.dem_gapfill_steps, resolution)
 
                 for product in products:
-                    commands.create_dem(
-                            dem_input,
-                            product,
-                            output_type='idw' if product == 'dtm' else 'max',
-                            radiuses=list(map(str, radius_steps)),
-                            gapfill=args.dem_gapfill_steps > 0,
-                            outdir=odm_dem_root,
-                            resolution=resolution / 100.0,
-                            decimation=args.dem_decimation,
-                            max_workers=args.max_concurrency,
-                            with_euclidean_map=args.dem_euclidean_map,
-                            max_tiles=None if reconstruction.has_geotagged_photos() else math.ceil(len(reconstruction.photos) / 2)
-                        )
+                    with self.step("create_%s" % product):
+                        commands.create_dem(
+                                dem_input,
+                                product,
+                                output_type='idw' if product == 'dtm' else 'max',
+                                radiuses=list(map(str, radius_steps)),
+                                gapfill=args.dem_gapfill_steps > 0,
+                                outdir=odm_dem_root,
+                                resolution=resolution / 100.0,
+                                decimation=args.dem_decimation,
+                                max_workers=args.max_concurrency,
+                                with_euclidean_map=args.dem_euclidean_map,
+                                max_tiles=None if reconstruction.has_geotagged_photos() else math.ceil(len(reconstruction.photos) / 2)
+                            )
 
-                    dem_geotiff_path = os.path.join(odm_dem_root, "{}.tif".format(product))
-                    bounds_file_path = os.path.join(tree.odm_georeferencing, 'odm_georeferenced_model.bounds.gpkg')
+                        dem_geotiff_path = os.path.join(odm_dem_root, "{}.tif".format(product))
+                        bounds_file_path = os.path.join(tree.odm_georeferencing, 'odm_georeferenced_model.bounds.gpkg')
 
-                    if args.crop > 0 or args.boundary:
-                        # Crop DEM
-                        Cropper.crop(bounds_file_path, dem_geotiff_path, utils.get_dem_vars(args), keep_original=not args.optimize_disk_space)
+                        if args.crop > 0 or args.boundary:
+                            # Crop DEM
+                            Cropper.crop(bounds_file_path, dem_geotiff_path, utils.get_dem_vars(args), keep_original=not args.optimize_disk_space)
 
-                    if pseudo_georeference:
-                        pseudogeo.add_pseudo_georeferencing(dem_geotiff_path)
-                    
-                    add_raster_meta_tags(dem_geotiff_path, reconstruction, tree, embed_gcp_meta=not outputs['large'])
+                        if pseudo_georeference:
+                            pseudogeo.add_pseudo_georeferencing(dem_geotiff_path)
+                        
+                        add_raster_meta_tags(dem_geotiff_path, reconstruction, tree, embed_gcp_meta=not outputs['large'])
 
-                    if args.tiles:
-                        generate_dem_tiles(dem_geotiff_path, tree.path("%s_tiles" % product), args.max_concurrency, resolution)
-                    
-                    if args.cog:
-                        convert_to_cogeo(dem_geotiff_path, max_workers=args.max_concurrency)
+                        if args.tiles:
+                            generate_dem_tiles(dem_geotiff_path, tree.path("%s_tiles" % product), args.max_concurrency, resolution)
+                        
+                        if args.cog:
+                            convert_to_cogeo(dem_geotiff_path, max_workers=args.max_concurrency)
 
                     progress += 40
                     self.update_progress(progress)

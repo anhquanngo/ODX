@@ -46,41 +46,44 @@ class ODMSplitStage(types.ODM_Stage):
             split_done_file = octx.path("split_done.txt")
 
             if not io.file_exists(split_done_file) or self.rerun():
-                orig_max_concurrency = args.max_concurrency
-                if not local_workflow:
-                    args.max_concurrency = max(1, args.max_concurrency - 1)
-                    log.INFO("Setting max-concurrency to %s to better handle remote splits" % args.max_concurrency)
+                with self.step("prepare_split"):
+                    orig_max_concurrency = args.max_concurrency
+                    if not local_workflow:
+                        args.max_concurrency = max(1, args.max_concurrency - 1)
+                        log.INFO("Setting max-concurrency to %s to better handle remote splits" % args.max_concurrency)
 
-                log.INFO("Large dataset detected (%s photos) and split set at %s. Preparing split merge." % (len(photos), args.split))
-                multiplier = (1.0 / len(reconstruction.multi_camera)) if reconstruction.multi_camera else 1.0
+                    log.INFO("Large dataset detected (%s photos) and split set at %s. Preparing split merge." % (len(photos), args.split))
+                    multiplier = (1.0 / len(reconstruction.multi_camera)) if reconstruction.multi_camera else 1.0
 
-                config = [
-                    "submodels_relpath: " + os.path.join("..", "submodels", "opensfm"),
-                    "submodel_relpath_template: " + os.path.join("..", "submodels", "submodel_%04d", "opensfm"),
-                    "submodel_images_relpath_template: " + os.path.join("..", "submodels", "submodel_%04d", "images"),
-                    "submodel_size: %s" % max(2, int(float(args.split) * multiplier)),
-                    "submodel_overlap: %s" % args.split_overlap,
-                ]
+                    config = [
+                        "submodels_relpath: " + os.path.join("..", "submodels", "opensfm"),
+                        "submodel_relpath_template: " + os.path.join("..", "submodels", "submodel_%04d", "opensfm"),
+                        "submodel_images_relpath_template: " + os.path.join("..", "submodels", "submodel_%04d", "images"),
+                        "submodel_size: %s" % max(2, int(float(args.split) * multiplier)),
+                        "submodel_overlap: %s" % args.split_overlap,
+                    ]
 
-                octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, append_config=config, rerun=self.rerun())
-                octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
+                    octx.setup(args, tree.dataset_raw, reconstruction=reconstruction, append_config=config, rerun=self.rerun())
+                    octx.photos_to_metadata(photos, args.rolling_shutter, args.rolling_shutter_readout, self.rerun())
 
-                self.update_progress(5)
+                    self.update_progress(5)
 
-                if local_workflow:
-                    octx.feature_matching(self.rerun())
+                    if local_workflow:
+                        with self.step("feature_matching"):
+                            octx.feature_matching(self.rerun())
 
-                self.update_progress(20)
+                    self.update_progress(20)
 
-                # Create submodels
-                if not io.dir_exists(tree.submodels_path) or self.rerun():
-                    if io.dir_exists(tree.submodels_path):
-                        log.WARNING("Removing existing submodels directory: %s" % tree.submodels_path)
-                        shutil.rmtree(tree.submodels_path)
+                    # Create submodels
+                    with self.step("create_submodels"):
+                        if not io.dir_exists(tree.submodels_path) or self.rerun():
+                            if io.dir_exists(tree.submodels_path):
+                                log.WARNING("Removing existing submodels directory: %s" % tree.submodels_path)
+                                shutil.rmtree(tree.submodels_path)
 
-                    octx.run("create_submodels")
-                else:
-                    log.WARNING("Submodels directory already exist at: %s" % tree.submodels_path)
+                            octx.run("create_submodels")
+                        else:
+                            log.WARNING("Submodels directory already exist at: %s" % tree.submodels_path)
 
                 # Find paths of all submodels
                 mds = metadataset.MetaDataSet(tree.opensfm)
@@ -121,21 +124,22 @@ class ODMSplitStage(types.ODM_Stage):
                                     system.link_file(os.path.join(tree.dataset_raw, p.filename), submodel_images_dir)
 
                 # Reconstruct each submodel
-                log.INFO("Dataset has been split into %s submodels. Reconstructing each submodel..." % len(submodel_paths))
-                self.update_progress(25)
+                with self.step("reconstruct_submodels"):
+                    log.INFO("Dataset has been split into %s submodels. Reconstructing each submodel..." % len(submodel_paths))
+                    self.update_progress(25)
 
-                if local_workflow:
-                    for sp in submodel_paths:
-                        log.INFO("Reconstructing %s" % sp)
-                        local_sp_octx = OSFMContext(sp)
-                        local_sp_octx.create_tracks(self.rerun())
-                        local_sp_octx.reconstruct(args.rolling_shutter, not args.sfm_no_partial, self.rerun())
-                else:
-                    lre = LocalRemoteExecutor(args.sm_cluster, args.rolling_shutter, self.rerun())
-                    lre.set_projects([os.path.abspath(os.path.join(p, "..")) for p in submodel_paths])
-                    lre.run_reconstruction()
+                    if local_workflow:
+                        for sp in submodel_paths:
+                            log.INFO("Reconstructing %s" % sp)
+                            local_sp_octx = OSFMContext(sp)
+                            local_sp_octx.create_tracks(self.rerun())
+                            local_sp_octx.reconstruct(args.rolling_shutter, not args.sfm_no_partial, self.rerun())
+                    else:
+                        lre = LocalRemoteExecutor(args.sm_cluster, args.rolling_shutter, self.rerun())
+                        lre.set_projects([os.path.abspath(os.path.join(p, "..")) for p in submodel_paths])
+                        lre.run_reconstruction()
 
-                self.update_progress(50)
+                    self.update_progress(50)
 
                 remove_paths = []
 
